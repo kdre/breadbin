@@ -2,7 +2,7 @@
 
 English first, German below each version. / Englisch zuerst, Deutsch jeweils darunter.
 
-## Unreleased / noch nicht veröffentlicht
+## 0.9.2 (2026-11-20)
 
 - Launch games in an emulator on your computer (VICE `x64sc` by default, other emulators via their own command
   line): Settings → Emulator, then pick the emulator in the device selection of the details. Works with all formats
