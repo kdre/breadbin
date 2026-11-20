@@ -1,0 +1,34 @@
+Breadbin – tragbare Fassung / portable version
+==============================================
+
+DEUTSCH
+
+Dieser Ordner "BreadbinData" neben Breadbin.exe schaltet die tragbare Fassung ein:
+Datenbank, Bilder, Einstellungen und die Daten der Oberfläche liegen hier und nicht
+auf dem Rechner. Den ganzen Ordner "Breadbin" kann man auf einen USB-Stick kopieren
+und an jedem Windows-PC starten, ohne etwas zu installieren.
+
+- Bekommt der Stick an einem anderen PC einen anderen Laufwerksbuchstaben, findet
+  Breadbin die Spieleordner auf dem Stick trotzdem (E:\Spiele wird zu F:\Spiele).
+  Ordner auf der Festplatte des jeweiligen PCs gibt es nur dort.
+- Das ScreenScraper-Passwort speichert Windows je PC; an einem anderen PC muss man
+  es in den Einstellungen noch einmal eintragen.
+- Voraussetzung: WebView2 (bei Windows 10 und 11 normalerweise schon vorhanden).
+- Ordner umbenennen oder löschen = Breadbin nutzt wieder den normalen Datenordner
+  des Benutzers (%APPDATA%\de.dersedor.breadbin).
+
+ENGLISH
+
+This folder "BreadbinData" next to Breadbin.exe turns on the portable version:
+database, images, settings and the user interface's data are kept here instead of
+on the computer. Copy the whole "Breadbin" folder to a USB stick and start it on any
+Windows PC without installing anything.
+
+- If the stick gets a different drive letter on another PC, Breadbin still finds the
+  game folders on the stick (E:\Games becomes F:\Games). Folders on a PC's own hard
+  disk only exist there.
+- Windows stores the ScreenScraper password per PC; on another PC enter it again in
+  the settings.
+- Requires WebView2 (normally already present on Windows 10 and 11).
+- Rename or delete this folder and Breadbin uses the user's normal data folder again
+  (%APPDATA%\de.dersedor.breadbin).

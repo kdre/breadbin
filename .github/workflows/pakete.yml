@@ -27,6 +27,7 @@ jobs:
             pakete: |
               target/release/bundle/msi/*.msi
               target/release/bundle/nsis/*.exe
+              target/release/bundle/portable/*.zip
           # 22.04: ältere glibc, damit die Pakete auch auf älteren Distributionen laufen.
           - os: ubuntu-22.04
             name: linux
@@ -93,6 +94,18 @@ jobs:
           else
             cargo tauri build
           fi
+
+      # Tragbare Fassung: Breadbin.exe plus Ordner BreadbinData (schaltet sie ein) in einem ZIP.
+      - name: Windows tragbar (ZIP)
+        if: matrix.name == 'windows'
+        shell: bash
+        run: |
+          version=$(grep -m1 '"version"' src-tauri/tauri.conf.json | cut -d'"' -f4)
+          mkdir -p target/release/bundle/portable/Breadbin/BreadbinData
+          cp target/release/breadbin.exe target/release/bundle/portable/Breadbin/Breadbin.exe
+          cp "packaging/windows/BreadbinData - Lies mich - Read me.txt" target/release/bundle/portable/Breadbin/BreadbinData/
+          cd target/release/bundle/portable
+          7z a -tzip "Breadbin_${version}_x64-portable.zip" Breadbin
 
       # ZIP-Artefakte verlieren das Ausführbar-Bit: macOS als DMG, Linux als AppImage/deb/rpm.
       - uses: actions/upload-artifact@v4

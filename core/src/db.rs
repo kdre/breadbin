@@ -1359,9 +1359,67 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Tragbare Fassung: Der Stick hat an diesem Rechner einen anderen Laufwerksbuchstaben bekommen.
+/// Schreibt Ordner-Quellen und den Emulator-Pfad von `old` (z. B. `"E:"`) auf `new` um und merkt
+/// sich `new` als Laufwerk der App. Gibt die Zahl der geänderten Einträge zurück.
+pub fn rewrite_drive(conn: &Connection, old: &str, new: &str) -> Result<usize> {
+    let pattern =
+        |col: &str| format!("upper(substr({col}, 1, 3)) IN (upper(?1) || '\\', upper(?1) || '/')");
+    let mut n = conn.execute(
+        &format!(
+            "UPDATE OR IGNORE sources SET location = ?2 || substr(location, 3)
+             WHERE kind = 'local' AND {}",
+            pattern("location")
+        ),
+        params![old, new],
+    )?;
+    n += conn.execute(
+        &format!(
+            "UPDATE settings SET value = ?2 || substr(value, 3)
+             WHERE key = 'emulator_path' AND {}",
+            pattern("value")
+        ),
+        params![old, new],
+    )?;
+    set_setting(conn, "portable_drive", new)?;
+    Ok(n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn laufwerk_umschreiben() {
+        let conn = open_in_memory().unwrap();
+        conn.execute_batch(
+            "INSERT INTO sources(kind, label, location) VALUES
+               ('local', 'Stick', 'E:\\Games'), ('local', 'Platte', 'C:\\Spiele'),
+               ('local', 'Wurzel', 'e:/'), ('ultimate', 'U64', 'ftp://192.0.2.1/USB0')",
+        )
+        .unwrap();
+        set_setting(&conn, "emulator_path", "E:\\VICE\\bin\\x64sc.exe").unwrap();
+        assert_eq!(rewrite_drive(&conn, "E:", "F:").unwrap(), 3);
+        let locs: Vec<String> = conn
+            .prepare("SELECT location FROM sources ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(
+            locs,
+            ["F:\\Games", "C:\\Spiele", "F:/", "ftp://192.0.2.1/USB0"]
+        );
+        assert_eq!(
+            get_setting(&conn, "emulator_path").unwrap().as_deref(),
+            Some("F:\\VICE\\bin\\x64sc.exe")
+        );
+        assert_eq!(
+            get_setting(&conn, "portable_drive").unwrap().as_deref(),
+            Some("F:")
+        );
+    }
 
     fn file(
         conn: &Connection,

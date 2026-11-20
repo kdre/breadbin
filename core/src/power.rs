@@ -413,7 +413,8 @@ mod tests {
             Some("98:88:E0:02:34:57")
         );
         assert_eq!(parse_arp(mac, "192.0.2.2"), None, "nur exakte IP");
-        let linux = "Address HWtype HWaddress Flags Mask Iface\n192.0.2.246 ether 98:88:e0:02:34:57 C eth0";
+        let linux =
+            "Address HWtype HWaddress Flags Mask Iface\n192.0.2.246 ether 98:88:e0:02:34:57 C eth0";
         assert_eq!(
             parse_arp(linux, "192.0.2.246").as_deref(),
             Some("98:88:E0:02:34:57")

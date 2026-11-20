@@ -5,6 +5,7 @@
   <a href="#h-details">Details</a>
   <a href="#h-devices">Ultimate-Geräte</a>
   <a href="#h-launch">Starten und Einlegen</a>
+  <a href="#h-emu">Emulator</a>
   <a href="#h-scraper">Beschreibungen</a>
   <a href="#h-fix">Korrigieren</a>
   <a href="#h-own">Eigene Angaben</a>
@@ -19,7 +20,7 @@
 
 <p>Breadbin erfasst deine C64-Spiele aus Ordnern, Netzlaufwerken und von den USB-Sticks deiner
 Ultimate-Geräte, zeigt, was wo liegt, holt Beschreibungen und Bilder und startet Spiele direkt auf
-einem Ultimate 64, einem C64 Ultimate oder einem 1541 Ultimate II+.</p>
+einem Ultimate 64, einem C64 Ultimate oder einem 1541 Ultimate II+ – oder in einem Emulator wie VICE.</p>
 
 <h3 id="h-start">Erste Schritte</h3>
 <ol>
@@ -104,11 +105,11 @@ sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase
   <li><b>Diskettenreihen</b>: Unter „Disketten“ steht jede Disk/Seite in der richtigen Reihenfolge – bei
     Disk 1 „Starten“, bei jeder „Einlegen“. Erkannt über den Namen („Side 2“, „Disk 1“, „s1“) oder über
     den Ordner (SUMMER1A, SUMMER1B, SUMMER1C).</li>
-  <li><b>Bänder (TAP)</b> lassen sich nicht starten: Die Ultimate hat dafür keinen Fernsteuerbefehl.</li>
+  <li><b>Bänder (TAP)</b> lassen sich auf dem Ultimate nicht starten: Er hat dafür keinen Fernsteuerbefehl. Im Emulator gehen sie (siehe unten).</li>
   <li><b>„Bildschirmfoto“</b> (Ultimate 64 und C64 Ultimate): Was das Gerät gerade zeigt, wird als eigenes
     Titelbild oder eigene Spielszene gespeichert (320 × 200, ohne Rahmen) – etwa für die
     Gemeinschaftsdaten. Denselben Knopf gibt es im Dialog „Angaben selbst eintragen“ bei Titelbild und Spielszene.
-    Die Ultimate schickt ihr Bild dafür kurz als Videostrom; andere Empfänger (z. B. eine
+    Der Ultimate schickt sein Bild dafür kurz als Videostrom; andere Empfänger (z. B. eine
     Jukebox) verlieren ihn dabei. <b>Nur mit Netzwerkkabel:</b> Den Videostrom schickt der Ultimate ausschließlich über
     Ethernet; ein Gerät, das nur per WLAN im Netz hängt, liefert kein Bild. Kommt trotz Kabel kein Bild an, blockiert
     womöglich die Firewall eingehende UDP-Pakete.</li>
@@ -116,6 +117,27 @@ sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase
     Zeit (Standard 25 Sekunden) und macht ein Bildschirmfoto als eigenes Titelbild – nur wenn das Spiel noch keines
     hat. Startest du vorher ein anderes Spiel auf demselben Gerät, gilt die Aufnahme für das neue. Zeigt das Bild
     noch einen Lader oder ein Intro, ersetze es in den Details.</li>
+</ul>
+
+<h3 id="h-emu">Im Emulator starten</h3>
+<ul>
+  <li>Ohne Ultimate – oder zusätzlich – startet Breadbin Spiele in einem <b>Emulator auf dem Rechner</b>, etwa in
+    <b>VICE</b> (kostenlos: <code>vice-emu.sourceforge.io</code>). In ⚙ Einstellungen unter „Emulator“ findet
+    <b>„VICE suchen“</b> die üblichen Orte: Suchpfad und Programmordner, unter Windows auch Downloads, Desktop,
+    Dokumente und die Wurzel aller Laufwerke (z. B. <code>D:\GTK3VICE-3.9-win64</code> oder
+    <code>C:\Emulatoren\WinVICE-3.1-x64</code>), unter Linux auch Flatpak und Snap. Liegt VICE woanders, mit „Auswählen …“ das Programm <code>x64sc</code> wählen
+    (am Mac geht auch <code>x64sc.app</code>).</li>
+  <li>Danach steht der Emulator als eigener Eintrag in der Geräteauswahl der Details, z. B. „x64sc (Emulator)“.
+    <b>„Starten“</b> öffnet ein neues Emulator-Fenster mit dem Spiel. Das geht mit PRG, P00, T64, TAP, CRT, D64,
+    D71, D81 und G64 – auch aus ZIP-Archiven, von Netzlaufwerken und vom Stick eines Ultimate.</li>
+  <li>Breadbin legt dafür eine <b>Kopie</b> im Datenordner ab (Unterordner <code>emulator</code>). Speichert ein
+    Spiel auf seine Diskette, landet der Spielstand in dieser Kopie und ist beim nächsten Start noch da; das Original
+    bleibt unverändert.</li>
+  <li><b>Mehrere Disketten:</b> Gehört das Spiel zu einer Diskettenreihe, bekommt VICE alle Seiten als Wechselliste
+    (Fliplist). Die nächste Diskette legst du in VICE über das Menü „Fliplist“ ein (meist Alt+N; in der SDL-Fassung
+    über das Menü mit F12).</li>
+  <li><b>Andere Emulatoren:</b> Unter „Aufruf“ steht, wie das Programm aufgerufen wird; <code>{file}</code> ist die
+    Spieldatei. Für VICE passt die Vorgabe <code>-autostart {file}</code>.</li>
 </ul>
 
 <h3 id="h-scraper">Beschreibungen von ScreenScraper (freiwillig)</h3>
@@ -259,6 +281,12 @@ Listen, Notizen, Einstellungen) und alle Bilder als eine ZIP-Datei. „Sicherung
 jetzige Bibliothek – etwa auf einem neuen Rechner; die bisherige Datenbank bleibt als
 <code>spiele.vor-wiederherstellung.sqlite</code> im Datenordner. Passwörter gehören nicht dazu, sie liegen im
 Schlüsselbund.</p>
+<p><b>Tragbar (Windows):</b> Die ZIP-Fassung „…-portable.zip“ entpacken, etwa auf einen USB-Stick. Neben
+<code>Breadbin.exe</code> liegt der Ordner <code>BreadbinData</code>; solange es ihn gibt, bleiben Datenbank, Bilder,
+Einstellungen und die Daten der Oberfläche darin, auf dem PC wird nichts installiert. Bekommt der Stick an einem
+anderen PC einen anderen Laufwerksbuchstaben, schreibt Breadbin die Spieleordner auf dem Stick beim Start um
+(<code>E:\Spiele</code> → <code>F:\Spiele</code>). Das ScreenScraper-Passwort speichert Windows je PC, an einem
+anderen PC also noch einmal eintragen. Voraussetzung ist WebView2, bei Windows 10 und 11 normalerweise vorhanden.</p>
 <p>Ins Netz geht Breadbin nur für deine Geräte, ScreenScraper (wenn eingerichtet) und 8bitcavern.de: dort liegen die
 Gemeinschaftsdaten und eine kleine Datei mit der neuesten Breadbin-Fassung. Ist eine neuere Fassung da, steht unten
 in der Statuszeile „Breadbin … ist da“ – ein Klick öffnet die Seite zum Herunterladen. Beides lässt sich in ⚙

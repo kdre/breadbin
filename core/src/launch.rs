@@ -416,7 +416,10 @@ pub fn t64_to_prg(data: &[u8]) -> Result<Vec<u8>> {
 // ---------------------------------------------------------------- Start
 
 /// Liest einen Fundort: lokale Datei, Datei auf einem Gerät, jeweils auch aus einem ZIP.
-fn read_location(loc: &db::Location, password_for: &dyn Fn(&str) -> String) -> Result<Vec<u8>> {
+pub(crate) fn read_location(
+    loc: &db::Location,
+    password_for: &dyn Fn(&str) -> String,
+) -> Result<Vec<u8>> {
     let raw = if loc.source_kind == "ultimate" {
         let (host, root) = ftp::split_location(&loc.source_location)
             .context(tr!("Geräteort ungültig", "Invalid device location"))?;
@@ -456,7 +459,7 @@ fn read_location(loc: &db::Location, password_for: &dyn Fn(&str) -> String) -> R
 }
 
 /// Dateiname auf dem Gerät: nur unproblematische Zeichen, Endung passend zum Startweg.
-fn device_file_name(title: &str, sha1: &str, ext: &str) -> String {
+pub(crate) fn device_file_name(title: &str, sha1: &str, ext: &str) -> String {
     let base: String = title
         .chars()
         .map(|c| {

@@ -3,6 +3,7 @@
 pub mod awake;
 pub mod backup;
 pub mod db;
+pub mod emulator;
 pub mod formats;
 pub mod ftp;
 pub mod i18n;

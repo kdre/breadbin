@@ -114,6 +114,16 @@
         Nach dem Starten ein Titelbild aufnehmen, wenn das Spiel noch keines hat</label>
       <label>Wartezeit bis zur Aufnahme in Sekunden <input type="number" id="auto-title-delay" min="5" max="180" step="5"></label>
       <p class="meta">Nur Ultimate 64 und C64 Ultimate mit Netzwerkkabel. Das Bild wird als eigenes Titelbild gespeichert und lässt sich in den Details ersetzen.</p>
+      <h4>Emulator (freiwillig)</h4>
+      <p class="meta">Spiele auch ohne Ultimate auf dem Rechner starten, etwa mit VICE (x64sc). Breadbin legt dafür eine Kopie im Datenordner ab; was ein Spiel auf seine Diskette speichert, bleibt dort erhalten.</p>
+      <label>Programm <input id="emu-path" autocomplete="off" spellcheck="false" placeholder="z. B. …/x64sc"></label>
+      <div class="emu-buttons">
+        <button type="button" id="btn-emu-find">VICE suchen</button>
+        <button type="button" id="btn-emu-pick">Auswählen …</button>
+        <select id="emu-found" hidden></select>
+      </div>
+      <label>Aufruf <input id="emu-args" autocomplete="off" spellcheck="false"></label>
+      <p class="meta">{file} steht für die Spieldatei. Für VICE passt die Vorgabe; bei Spielen mit mehreren Disketten bekommt VICE eine Wechselliste (nächste Diskette: „Fliplist“ im VICE-Menü, meist Alt+N).</p>
       <h4>ScreenScraper (freiwillig)</h4>
       <p class="meta">
         Zusätzliche Beschreibungen, Genres und Bilder von ScreenScraper.fr. Dafür brauchst du ein

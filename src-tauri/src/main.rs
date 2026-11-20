@@ -335,9 +335,13 @@ async fn community_submit(
         share::submission_chunks(games, &state.media_dir)
     };
     let total = chunks.len();
-    let mut done = share::SubmitResult { ok: true, ..Default::default() };
+    let mut done = share::SubmitResult {
+        ok: true,
+        ..Default::default()
+    };
     for (i, chunk) in chunks.into_iter().enumerate() {
-        let tmp = std::env::temp_dir().join(format!("breadbin-beitrag-{}-{i}.zip", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("breadbin-beitrag-{}-{i}.zip", std::process::id()));
         let prints: Vec<(String, String)> = chunk
             .iter()
             .map(|s| (s.0.sha1.clone(), share::fingerprint(s)))
@@ -345,7 +349,9 @@ async fn community_submit(
         // Unter der Sperre nur die Datei schreiben, hochladen ohne Sperre.
         share::export_games(chunk, &state.media_dir, &tmp, agent).map_err(err)?;
         let hint = if total > 1 {
-            format!("{} (Teil {}/{total})", hinweis.trim(), i + 1).trim().to_string()
+            format!("{} (Teil {}/{total})", hinweis.trim(), i + 1)
+                .trim()
+                .to_string()
         } else {
             hinweis.clone()
         };
@@ -594,17 +600,70 @@ fn local_path(state: State<AppState>, source_id: i64, path: String) -> CmdResult
         .to_string())
 }
 
+/// Ordner, der neben dem Programm die tragbare Fassung einschaltet.
+const PORTABLE_DIR: &str = "BreadbinData";
+
+/// Tragbare Fassung: Liegt neben dem Programm ein Ordner `BreadbinData`, kommen Datenbank, Bilder,
+/// Einstellungen und die Daten der Oberfläche dorthin statt in den Benutzerordner des Rechners.
+fn portable_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.join(PORTABLE_DIR);
+    dir.is_dir().then_some(dir)
+}
+
+/// Laufwerksbuchstabe eines Pfads („E:“), nur unter Windows.
+fn drive_of(path: &Path) -> Option<String> {
+    match path.components().next()? {
+        std::path::Component::Prefix(p) => match p.kind() {
+            std::path::Prefix::Disk(l) | std::path::Prefix::VerbatimDisk(l) => {
+                Some(format!("{}:", (l as char).to_ascii_uppercase()))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn main() {
-    tauri::Builder::default()
+    let portable = portable_dir();
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        // Fenstergröße und -lage beim nächsten Start wiederherstellen.
-        .plugin(tauri_plugin_window_state::Builder::default().build())
-        .setup(|app| {
-            let dir = app.path().app_data_dir()?;
+        .plugin(tauri_plugin_opener::init());
+    // Fenstergröße und -lage beim nächsten Start wiederherstellen – nicht in der tragbaren
+    // Fassung, das Modul schreibt fest in den Benutzerordner des Rechners.
+    if portable.is_none() {
+        builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+    }
+    builder
+        .setup(move |app| {
+            let dir = match &portable {
+                Some(d) => d.clone(),
+                None => app.path().app_data_dir()?,
+            };
             std::fs::create_dir_all(&dir)?;
             let db_path = dir.join("spiele.sqlite");
             let conn = db::open(&db_path)?;
+            if portable.is_some() {
+                // Anderer Rechner, anderer Buchstabe: Ordner auf dem Stick wieder finden.
+                if let Some(now) = drive_of(&dir) {
+                    match db::get_setting(&conn, "portable_drive")? {
+                        Some(old) if old != now => {
+                            db::rewrite_drive(&conn, &old, &now)?;
+                        }
+                        Some(_) => {}
+                        None => db::set_setting(&conn, "portable_drive", &now)?,
+                    }
+                }
+            }
+            // Fenster selbst anlegen: in der tragbaren Fassung mit eigenem Ordner für die Daten
+            // der Oberfläche (WebView2 schreibt sonst nach %LOCALAPPDATA%).
+            if let Some(cfg) = app.config().app.windows.first() {
+                let mut win = tauri::WebviewWindowBuilder::from_config(app.handle(), cfg)?;
+                if portable.is_some() && cfg!(windows) {
+                    win = win.data_directory(dir.join("webview"));
+                }
+                win.build()?;
+            }
             app.manage(AppState {
                 db_path,
                 media_dir: dir.join("media"),
@@ -684,6 +743,8 @@ fn main() {
             devices::clean_upload_dir,
             devices::copy_to_device,
             devices::fetch_saves,
+            devices::find_emulators,
+            devices::launch_emulator,
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Start der App");

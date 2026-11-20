@@ -30,13 +30,14 @@ jobs:
         name: Pakete des neuesten Releases holen und umbenennen
         run: |
           mkdir -p dl website/download
-          gh release download --dir dl --pattern '*.dmg' --pattern '*.exe' --pattern '*.msi' \
+          gh release download --dir dl --pattern '*.dmg' --pattern '*.exe' --pattern '*.msi' --pattern '*-portable.zip' \
             --pattern '*.AppImage' --pattern '*.deb' --pattern '*.rpm'
           ls -la dl
           cd dl
           cp *_universal.dmg ../website/download/Breadbin_universal.dmg
           cp *_x64-setup.exe ../website/download/Breadbin_x64-setup.exe
           cp *_x64_en-US.msi ../website/download/Breadbin_x64_en-US.msi
+          cp *_x64-portable.zip ../website/download/Breadbin_x64-portable.zip || echo "keine tragbare Fassung im Release"
           cp *_amd64.AppImage ../website/download/Breadbin_amd64.AppImage
           cp *_amd64.deb ../website/download/Breadbin_amd64.deb
           cp *.x86_64.rpm ../website/download/Breadbin.x86_64.rpm

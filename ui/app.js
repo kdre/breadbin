@@ -819,7 +819,7 @@ async function showDetails(sha1) {
           <span class="v-title">${esc(v.title)}${v.image_name && v.image_name !== v.title ? ` <span class="meta">${t("„{name}“", { name: esc(v.image_name) })}</span>` : ""}</span>
           <span class="meta">${fmtSize(v.size)} · ${v.locations === 1 ? t("1 Ort") : t("{n} Orte", { n: v.locations })}</span>
         </button>${devices.length && DISK_FORMATS.includes(v.format)
-          ? `<button class="small insert" data-insert="${v.sha1}" title="${t("In Laufwerk A einlegen, ohne Neustart – für den Diskwechsel im laufenden Spiel")}">${t("Einlegen")}</button>` : ""}<button class="small ungroup" data-ungroup="${v.sha1}" title="${t("Diese Fassung ist ein anderes Spiel: aus der Gruppe lösen und allein anzeigen")}">${t("Lösen")}</button></li>`).join("")}</ul>` : ""}
+          ? `<button class="small insert dev-only" data-insert="${v.sha1}" title="${t("In Laufwerk A einlegen, ohne Neustart – für den Diskwechsel im laufenden Spiel")}">${t("Einlegen")}</button>` : ""}<button class="small ungroup" data-ungroup="${v.sha1}" title="${t("Diese Fassung ist ein anderes Spiel: aus der Gruppe lösen und allein anzeigen")}">${t("Lösen")}</button></li>`).join("")}</ul>` : ""}
     ${c64Directory(d)}
     <h4>${d.locations.length === 1 ? t("Gespeichert an 1 Ort") : t("Gespeichert an {n} Orten", { n: d.locations.length })}</h4>
     <ul class="locations">
@@ -1535,6 +1535,9 @@ function openSettings() {
   $("#update-check").checked = s.update_check;
   $("#auto-title").checked = s.auto_title;
   $("#auto-title-delay").value = String(s.auto_title_delay ?? 25);
+  $("#emu-path").value = s.emulator_path ?? "";
+  $("#emu-args").value = s.emulator_args || s.default_emulator_args || "";
+  $("#emu-found").hidden = true;
   $("#ss-dev").hidden = s.dev_builtin;
   $("#ss-devid").value = s.dev_id;
   $("#ss-devpassword").value = "";
@@ -1570,9 +1573,13 @@ async function saveSettings() {
       update_check: $("#update-check").checked,
       auto_title: $("#auto-title").checked,
       auto_title_delay: Number($("#auto-title-delay").value) || 25,
+      emulator_path: $("#emu-path").value.trim(),
+      emulator_args: $("#emu-args").value.trim() || scraperSettings.default_emulator_args,
     },
   });
   await loadScraperSettings();
+  // Emulator ein- oder ausgeschaltet: Startleiste der offenen Details neu aufbauen.
+  if (selectedSha1) await showDetails(selectedSha1);
 }
 
 // Adressfeld nur zeigen, wenn „Eigener Server“ gewählt ist
@@ -1584,6 +1591,26 @@ $("#community-src").addEventListener("change", showServerRows);
 $("#submit-src").addEventListener("change", showServerRows);
 
 $("#btn-settings").addEventListener("click", openSettings);
+
+// Emulator: übliche Orte von VICE absuchen oder das Programm selbst wählen
+$("#btn-emu-find").addEventListener("click", async () => {
+  const found = await invoke("find_emulators").catch(() => []);
+  const sel = $("#emu-found");
+  if (!found.length) {
+    sel.hidden = true;
+    showError(t("VICE nicht gefunden – bitte das Programm x64sc selbst auswählen (vice-emu.sourceforge.io)."));
+    return;
+  }
+  if (!$("#emu-path").value.trim()) $("#emu-path").value = found[0];
+  sel.innerHTML = found.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join("");
+  sel.value = $("#emu-path").value;
+  sel.hidden = found.length < 2;
+});
+$("#emu-found").addEventListener("change", (ev) => { $("#emu-path").value = ev.target.value; });
+$("#btn-emu-pick").addEventListener("click", async () => {
+  const path = await invoke("plugin:dialog|open", { options: { directory: false, multiple: false, title: t("Emulator auswählen (z. B. x64sc)") } });
+  if (path) $("#emu-path").value = path;
+});
 
 // ---------------------------------------------------------------- Anleitung und Über
 
@@ -2010,37 +2037,58 @@ function diskSets(variants) {
 function disksHtml(variants) {
   const sets = diskSets(variants);
   if (!sets.length) return "";
-  const canRun = devices.length > 0;
+  const canRun = devices.length > 0 || hasEmu();
   return `<h4>${t("Disketten")}</h4>${sets.map((set) => `
     <ol class="disk-set">${set.map((v, i) => `
       <li>
         <span class="disk-no">${esc(/^[A-Z]$/.test(v.disk) && !v.disk_set.startsWith("dir:") ? t("Seite {s}", { s: v.disk }) : t("Disk {s}", { s: v.disk }))}</span>
         <span class="v-title" title="${esc(v.title)}">${esc(v.title)} <span class="badge">${esc(v.format)}</span></span>
         ${canRun && i === 0 ? `<button class="small primary" data-start="${v.sha1}" title="${t("Ab dieser Disk starten – beendet, was gerade auf dem C64 läuft")}">${t("Starten")}</button>` : ""}
-        ${canRun ? `<button class="small" data-insert="${v.sha1}" title="${t("In Laufwerk A einlegen, ohne Neustart – für den Diskwechsel im laufenden Spiel")}">${t("Einlegen")}</button>` : ""}
+        ${devices.length ? `<button class="small dev-only" data-insert="${v.sha1}" title="${t("In Laufwerk A einlegen, ohne Neustart – für den Diskwechsel im laufenden Spiel")}">${t("Einlegen")}</button>` : ""}
       </li>`).join("")}</ol>`).join("")}`;
 }
 
 // Bildschirmfotos über den Videostrom können Ultimate 64 und C64 Ultimate, nicht das 1541 Ultimate II+.
 const canShoot = (d) => !!d && !/1541|II\+/i.test(d.product || "");
 
+// Emulator auf dem Rechner (Einstellungen) – erscheint als eigener Eintrag in der Geräteauswahl.
+const EMU = "emu";
+const hasEmu = () => !!scraperSettings?.emulator_path;
+const emuName = () => (scraperSettings?.emulator_path ?? "").split(/[\\/]/).filter(Boolean).pop()?.replace(/\.(app|exe)$/i, "") ?? "";
+
+function storedTarget() {
+  let v = null;
+  try { v = localStorage.getItem("launchDevice"); } catch { /* egal */ }
+  return v === EMU && hasEmu() ? EMU : storedDeviceId();
+}
+
+// Knöpfe, die nur mit einem Gerät gehen, beim Wechsel auf den Emulator ausblenden (und umgekehrt).
+function syncLaunchTarget(pane) {
+  const emu = pane.querySelector("#launch-device")?.value === EMU;
+  pane.querySelectorAll(".dev-only").forEach((el) => { el.hidden = emu; });
+  pane.querySelectorAll(".emu-only").forEach((el) => { el.hidden = !emu; });
+}
+
 function launchHtml(r) {
-  if (!devices.length) return "";
-  const sel = storedDeviceId();
+  const emu = hasEmu();
+  if (!devices.length && !emu) return "";
+  const sel = storedTarget();
   const disk = DISK_FORMATS.includes(r.format);
   const tap = r.format === "TAP";
   const shot = devices.some(canShoot)
-    ? `<button id="btn-shot" title="${t("Bild vom Bildschirm des Geräts als eigenes Titelbild oder eigene Spielszene speichern – nur mit Netzwerkkabel am Gerät")}">${t("Bildschirmfoto")}</button>` : "";
+    ? `<button class="dev-only" id="btn-shot" title="${t("Bild vom Bildschirm des Geräts als eigenes Titelbild oder eigene Spielszene speichern – nur mit Netzwerkkabel am Gerät")}">${t("Bildschirmfoto")}</button>` : "";
   return `<div class="launch">
     <select id="launch-device">${devices.map((d) =>
-      `<option value="${d.id}" ${d.id === sel ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select>
-    ${tap ? "" : `<button class="primary" id="btn-launch">${t("Starten")}</button>`}
-    ${disk ? `<button id="btn-insert" title="${t("In Laufwerk A einlegen, ohne Neustart – für den Diskwechsel im laufenden Spiel")}">${t("Einlegen")}</button>` : ""}
-    ${disk ? `<button id="btn-saves" title="${t("Hat das Spiel auf seine Diskette im Startordner gespeichert, diese Diskette mit Spielstand auf den Rechner holen")}">${t("Spielstand holen …")}</button>` : ""}
+      `<option value="${d.id}" ${d.id === sel ? "selected" : ""}>${esc(d.name)}</option>`).join("")}${emu
+      ? `<option value="${EMU}" ${sel === EMU || !devices.length ? "selected" : ""}>${esc(t("{name} (Emulator)", { name: emuName() }))}</option>` : ""}</select>
+    ${tap && !emu ? "" : `<button class="primary" id="btn-launch">${t("Starten")}</button>`}
+    ${disk ? `<button class="dev-only" id="btn-insert" title="${t("In Laufwerk A einlegen, ohne Neustart – für den Diskwechsel im laufenden Spiel")}">${t("Einlegen")}</button>` : ""}
+    ${disk ? `<button class="dev-only" id="btn-saves" title="${t("Hat das Spiel auf seine Diskette im Startordner gespeichert, diese Diskette mit Spielstand auf den Rechner holen")}">${t("Spielstand holen …")}</button>` : ""}
     ${shot}
-    <span class="meta hint">${tap ? t("Bandabbilder (TAP) lassen sich noch nicht starten.")
+    <span class="meta hint dev-only">${tap ? t("Bandabbilder (TAP) lassen sich noch nicht starten.")
       : disk ? t("Starten beendet, was gerade auf dem C64 läuft, und startet dieses Spiel; Einlegen wechselt nur die Diskette in Laufwerk A.")
       : t("Starten beendet, was gerade auf dem C64 läuft, und startet dieses Spiel.")}</span>
+    ${emu ? `<span class="meta hint emu-only">${t("Startet das Spiel in einem neuen Emulator-Fenster auf diesem Rechner.")}</span>` : ""}
   </div>`;
 }
 
@@ -2054,7 +2102,7 @@ async function captureScreen(pane, r, btn) {
   const title = t("Titelbild"), scene = t("Spielszene");
   const answer = await invoke("plugin:dialog|message", {
     message: t("Was gerade auf {name} zu sehen ist, als eigenes Bild speichern – als was?", { name: dev.name })
-      + "\n\n" + t("Die Ultimate schickt ihr Bild dafür kurz als Videostrom – nur über Ethernet, das Gerät muss per Netzwerkkabel verbunden sein. Andere Empfänger (etwa eine Jukebox) verlieren den Strom dabei."),
+      + "\n\n" + t("Der Ultimate schickt sein Bild dafür kurz als Videostrom – nur über Ethernet, das Gerät muss per Netzwerkkabel verbunden sein. Andere Empfänger (etwa eine Jukebox) verlieren den Strom dabei."),
     title: t("Bildschirmfoto"), kind: "info",
     buttons: { YesNoCancelCustom: [title, scene, t("Abbrechen")] },
   });
@@ -2075,6 +2123,11 @@ async function captureScreen(pane, r, btn) {
 }
 
 function wireLaunch(pane, r) {
+  const target = pane.querySelector("#launch-device");
+  if (target) {
+    syncLaunchTarget(pane);
+    target.addEventListener("change", () => syncLaunchTarget(pane));
+  }
   pane.querySelector("#btn-shot")?.addEventListener("click", (ev) => captureScreen(pane, r, ev.currentTarget).catch(showError));
   pane.querySelector("#btn-saves")?.addEventListener("click", () => {
     const dev = devices.find((d) => d.id === Number(pane.querySelector("#launch-device").value));
@@ -2119,9 +2172,31 @@ async function autoTitle(dev, sha1) {
   }, secs * 1000));
 }
 
+// Im Emulator starten; bei mehreren Disketten bekommt er alle Seiten dieser Reihe für den Wechsel.
+async function launchEmu(sha1, title, btn) {
+  const set = diskSets(lastVariants).find((l) => l.some((v) => v.sha1 === sha1));
+  btn.disabled = true;
+  setStatus(t("Starte „{title}“ im Emulator …", { title }));
+  try {
+    const res = await invoke("launch_emulator", { sha1, disks: set ? set.map((v) => v.sha1) : null });
+    setStatus(res.message);
+    if ($("#view").value === "recent") runSearch().catch(showError);
+  } catch (e) {
+    showError(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function launchOn(pane, sha1, title, insertOnly, btn) {
-  const deviceId = Number(pane.querySelector("#launch-device").value);
-  try { localStorage.setItem("launchDevice", String(deviceId)); } catch { /* egal */ }
+  const target = pane.querySelector("#launch-device").value;
+  try { localStorage.setItem("launchDevice", target); } catch { /* egal */ }
+  if (target === EMU) {
+    if (insertOnly) setStatus(t("Im Emulator die nächste Diskette über „Fliplist“ im VICE-Menü einlegen (meist Alt+N)."));
+    else await launchEmu(sha1, title, btn);
+    return;
+  }
+  const deviceId = Number(target);
   const dev = devices.find((d) => d.id === deviceId);
   btn.disabled = true;
   try {

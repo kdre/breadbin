@@ -10,6 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "create": false,
         "title": "Breadbin – C64 Game Library",
         "width": 1280,
         "height": 820,

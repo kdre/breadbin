@@ -1,9 +1,9 @@
 //! Bildschirmfoto von einem Ultimate (Ultimate 64, C64 Ultimate) über seinen Videostrom.
 //!
-//! Die Ultimate schickt das VIC-Bild per UDP: 780 Byte je Paket, 12 Byte Kopf
+//! Der Ultimate schickt das VIC-Bild per UDP: 780 Byte je Paket, 12 Byte Kopf
 //! (`<HHHHBBH`: Folge, Bildnummer, Zeile mit Bit 15 = letztes Paket, Breite, Zeilen je Paket,
 //! Bits je Punkt, Kodierung) und 4 Zeilen à 384 Punkte mit 4 Bit (unteres Halbbyte zuerst).
-//! Die Werte sind VIC-Farbnummern. Die Ultimate streamt nur an ein Ziel: Ein Bildschirmfoto
+//! Die Werte sind VIC-Farbnummern. Der Ultimate streamt nur an ein Ziel: Ein Bildschirmfoto
 //! nimmt anderen Empfängern den Strom weg.
 
 use crate::launch::Rest;
@@ -126,7 +126,7 @@ pub fn capture(host: &str, password: &str, timeout: Duration) -> Result<Frame> {
     result
 }
 
-/// Startet den Videostrom. Die Ultimate lehnt Stream-Starts zeitweise mit „Network Host Resolve Error“
+/// Startet den Videostrom. Der Ultimate lehnt Stream-Starts zeitweise mit „Network Host Resolve Error“
 /// ab und nimmt sie nach einigen Sekunden wieder an – so lange erneut anfragen.
 fn start_stream(rest: &Rest, target: &str) -> Result<()> {
     let mut tries = 0;
@@ -137,7 +137,7 @@ fn start_stream(rest: &Rest, target: &str) -> Result<()> {
                 tries += 1;
                 if tries == 6 {
                     bail!(tr!(
-                        "Die Ultimate lehnt den Videostrom gerade ab („Network Host Resolve Error“). Später erneut versuchen; hilft das nicht, das Gerät aus- und wieder einschalten.",
+                        "Der Ultimate lehnt den Videostrom gerade ab („Network Host Resolve Error“). Später erneut versuchen; hilft das nicht, das Gerät aus- und wieder einschalten.",
                         "The Ultimate is refusing the video stream right now (“Network Host Resolve Error”). Try again later; if that does not help, switch the device off and on again."
                     ));
                 }
@@ -170,7 +170,7 @@ fn receive(sock: &UdpSocket, timeout: Duration) -> Result<Frame> {
         }
     }
     bail!(tr!(
-        "Kein vollständiges Bild vom Gerät empfangen. Die Ultimate schickt den Videostrom nur über Ethernet – ist sie per Netzwerkkabel verbunden? Sonst blockiert womöglich eine Firewall eingehende UDP-Pakete.",
+        "Kein vollständiges Bild vom Gerät empfangen. Der Ultimate schickt den Videostrom nur über Ethernet – ist er per Netzwerkkabel verbunden? Sonst blockiert womöglich eine Firewall eingehende UDP-Pakete.",
         "No complete picture received from the device. The Ultimate sends the video stream over Ethernet only – is it connected with a network cable? Otherwise a firewall may be blocking incoming UDP packets."
     ))
 }

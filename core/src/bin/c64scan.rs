@@ -332,6 +332,35 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // --emu <programm> <zielordner> <suchtext|sha1> [weitere Disketten-SHA1 …]: im Emulator starten
+    if rest.first().map(String::as_str) == Some("--emu") && rest.len() >= 4 {
+        let (prog, dir, query) = (&rest[1], &rest[2], &rest[3]);
+        let sha1 = if query.len() == 40 && query.chars().all(|c| c.is_ascii_hexdigit()) {
+            query.to_ascii_lowercase()
+        } else {
+            db::search(&conn, query, None, 1)?
+                .into_iter()
+                .next()
+                .context("kein Treffer")?
+                .sha1
+        };
+        let mut disks: Vec<String> = rest[4..].to_vec();
+        if !disks.is_empty() {
+            disks.insert(0, sha1.clone());
+        }
+        let r = breadbin_core::emulator::start(
+            &conn,
+            &sha1,
+            &disks,
+            prog,
+            "",
+            std::path::Path::new(dir),
+            &|_| String::new(),
+        )?;
+        println!("{} → {}", r.message, r.file);
+        return Ok(());
+    }
+
     if rest.first().map(String::as_str) == Some("--cleanup") {
         println!("{:#?}", db::cleanup(&conn)?);
         return Ok(());

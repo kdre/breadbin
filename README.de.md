@@ -50,10 +50,20 @@ eine Anleitung ist eingebaut (Knopf „?“ oder F1).
 - Markierte Spiele in einen Ordner auf dem Gerät kopieren – dann findet man sie auch ohne Rechner im Menü
 - Gerätestatus, Einschalten per Wake-on-WiFi, Ausschalten, Suche im Netz, Ordnerauswahl auf dem Gerät
 
+**Emulator**
+- Spiele auch ohne Ultimate in einem Emulator auf dem Rechner starten, etwa VICE (`x64sc`) – alle Formate
+  einschließlich TAP, auch aus ZIP-Archiven; Spielstände bleiben in der Kopie erhalten, Diskettenreihen bekommen
+  eine Wechselliste. Andere Emulatoren lassen sich über eine eigene Aufrufzeile einbinden.
+
 ## Herunterladen und erster Start
 
 Die Pakete liegen auf der [Release-Seite](../../releases): macOS (Universal-DMG für Apple Silicon und
-Intel), Windows (MSI- oder EXE-Installer) und Linux (AppImage, deb, rpm).
+Intel), Windows (MSI- oder EXE-Installer, dazu eine tragbare ZIP-Fassung für den USB-Stick) und Linux
+(AppImage, deb, rpm).
+
+**Tragbar (Windows):** `Breadbin_…_x64-portable.zip` entpacken. Solange neben `Breadbin.exe` der Ordner
+`BreadbinData` liegt, bleiben alle Daten darin; ein anderer Laufwerksbuchstabe des Sticks wird beim Start
+berücksichtigt. Voraussetzung: WebView2 (bei Windows 10/11 normalerweise vorhanden).
 
 Breadbin ist nicht mit einem kostenpflichtigen Zertifikat signiert, deshalb warnen die Systeme beim
 ersten Start:

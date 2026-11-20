@@ -5,7 +5,7 @@
 use base64::Engine;
 use breadbin_core::launch::{self, Device, DeviceInfo, LaunchResult};
 use breadbin_core::tr;
-use breadbin_core::{db, metadata, power, screenshot};
+use breadbin_core::{db, emulator, metadata, power, screenshot};
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
@@ -102,6 +102,47 @@ pub async fn launch_game(
         if !insert_only {
             let _ = db::record_launch(&conn, &sha1, &dev.name);
         }
+        Ok(result)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Wo auf diesem Rechner VICE liegt (für die Einstellungen).
+#[tauri::command]
+pub async fn find_emulators() -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(emulator::find_emulators)
+        .await
+        .unwrap_or_default()
+}
+
+/// Startet ein Spiel im eingestellten Emulator. `disks` = alle Disketten desselben Spiels (für den Wechsel).
+#[tauri::command]
+pub async fn launch_emulator(
+    app: AppHandle,
+    sha1: String,
+    disks: Option<Vec<String>>,
+) -> CmdResult<emulator::EmuResult> {
+    let db_path = app.state::<AppState>().db_path.clone();
+    let dir = db_path
+        .parent()
+        .map(|p| p.join("emulator"))
+        .ok_or_else(|| err("Datenordner unbekannt"))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db::open(&db_path).map_err(err)?;
+        let get = |k: &str| db::get_setting(&conn, k).ok().flatten().unwrap_or_default();
+        let (path, args) = (get("emulator_path"), get("emulator_args"));
+        let result = emulator::start(
+            &conn,
+            &sha1,
+            &disks.unwrap_or_default(),
+            &path,
+            &args,
+            &dir,
+            &|h| device_password(h),
+        )
+        .map_err(err)?;
+        let _ = db::record_launch(&conn, &sha1, "Emulator");
         Ok(result)
     })
     .await

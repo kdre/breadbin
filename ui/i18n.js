@@ -269,7 +269,7 @@ const EN = {
   "Bild vom Bildschirm des Geräts als eigenes Titelbild oder eigene Spielszene speichern – nur mit Netzwerkkabel am Gerät": "Save what the device shows as your own title screen or in-game picture – only with a network cable on the device",
   "{name} liefert kein Bild – Bildschirmfotos gehen mit Ultimate 64 und C64 Ultimate.": "{name} provides no picture – screenshots work with Ultimate 64 and C64 Ultimate.",
   "Was gerade auf {name} zu sehen ist, als eigenes Bild speichern – als was?": "Save what {name} is showing as your own picture – as what?",
-  "Die Ultimate schickt ihr Bild dafür kurz als Videostrom – nur über Ethernet, das Gerät muss per Netzwerkkabel verbunden sein. Andere Empfänger (etwa eine Jukebox) verlieren den Strom dabei.": "The Ultimate briefly sends its picture as a video stream – over Ethernet only, so the device needs a network cable. Other receivers (such as a jukebox) lose the stream meanwhile.",
+  "Der Ultimate schickt sein Bild dafür kurz als Videostrom – nur über Ethernet, das Gerät muss per Netzwerkkabel verbunden sein. Andere Empfänger (etwa eine Jukebox) verlieren den Strom dabei.": "The Ultimate briefly sends its picture as a video stream – over Ethernet only, so the device needs a network cable. Other receivers (such as a jukebox) lose the stream meanwhile.",
   "Nehme das Bild von {name} auf …": "Capturing the picture from {name} …",
   "Bildschirmfoto gespeichert.": "Screenshot saved.",
   "Was gerade auf dem Gerät zu sehen ist, als dieses Bild speichern (320 × 200) – nur mit Netzwerkkabel am Gerät": "Save what the device is showing as this picture (320 × 200) – only with a network cable on the device",
@@ -509,6 +509,23 @@ const EN = {
   "Nach dem Starten ein Titelbild aufnehmen, wenn das Spiel noch keines hat":
     "After launching, take a title picture if the game has none yet",
   "Wartezeit bis zur Aufnahme in Sekunden": "Delay before taking it, in seconds",
+  "Emulator (freiwillig)": "Emulator (optional)",
+  "Spiele auch ohne Ultimate auf dem Rechner starten, etwa mit VICE (x64sc). Breadbin legt dafür eine Kopie im Datenordner ab; was ein Spiel auf seine Diskette speichert, bleibt dort erhalten.":
+    "Launch games on this computer, even without an Ultimate, e.g. with VICE (x64sc). Breadbin puts a copy in its data folder; whatever a game saves to its disk is kept there.",
+  "Programm": "Program",
+  "z. B. …/x64sc": "e.g. …/x64sc",
+  "VICE suchen": "Find VICE",
+  "Auswählen …": "Choose …",
+  "Aufruf": "Command line",
+  "{file} steht für die Spieldatei. Für VICE passt die Vorgabe; bei Spielen mit mehreren Disketten bekommt VICE eine Wechselliste (nächste Diskette: „Fliplist“ im VICE-Menü, meist Alt+N).":
+    "{file} stands for the game file. The default suits VICE; for games with several disks VICE gets a flip list (next disk: “Fliplist” in the VICE menu, usually Alt+N).",
+  "VICE nicht gefunden – bitte das Programm x64sc selbst auswählen (vice-emu.sourceforge.io).":
+    "VICE not found – please choose the x64sc program yourself (vice-emu.sourceforge.io).",
+  "Emulator auswählen (z. B. x64sc)": "Choose emulator (e.g. x64sc)",
+  "{name} (Emulator)": "{name} (emulator)",
+  "Startet das Spiel in einem neuen Emulator-Fenster auf diesem Rechner.": "Starts the game in a new emulator window on this computer.",
+  "Starte „{title}“ im Emulator …": "Starting “{title}” in the emulator …",
+  "Im Emulator die nächste Diskette über „Fliplist“ im VICE-Menü einlegen (meist Alt+N).": "In the emulator, insert the next disk via “Fliplist” in the VICE menu (usually Alt+N).",
   "Nur Ultimate 64 und C64 Ultimate mit Netzwerkkabel. Das Bild wird als eigenes Titelbild gespeichert und lässt sich in den Details ersetzen.":
     "Ultimate 64 and C64 Ultimate with a network cable only. The picture is saved as your own title picture and can be replaced in the details.",
   "Titelbild von {name} aufgenommen – in den Details lässt es sich ersetzen.":

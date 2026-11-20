@@ -5,6 +5,7 @@
   <a href="#h-details">Details</a>
   <a href="#h-devices">Ultimate devices</a>
   <a href="#h-launch">Launch and insert</a>
+  <a href="#h-emu">Emulator</a>
   <a href="#h-scraper">Descriptions</a>
   <a href="#h-fix">Corrections</a>
   <a href="#h-own">Your own details</a>
@@ -19,7 +20,7 @@
 
 <p>Breadbin catalogs your C64 games from folders, network drives and the USB sticks of your Ultimate
 devices, shows what is stored where, fetches descriptions and pictures, and starts games directly on an
-Ultimate 64, a C64 Ultimate or a 1541 Ultimate II+.</p>
+Ultimate 64, a C64 Ultimate or a 1541 Ultimate II+ – or in an emulator such as VICE.</p>
 
 <h3 id="h-start">Getting started</h3>
 <ol>
@@ -101,7 +102,7 @@ ScreenScraper page) in your browser.</p>
     running game.</li>
   <li><b>Multi-disk games</b>: “Disks” lists every disk/side in order – “Launch” on disk 1, “Insert” on each.
     Detected from the name (“Side 2”, “Disk 1”, “s1”) or from the folder (SUMMER1A, SUMMER1B, SUMMER1C).</li>
-  <li><b>Tapes (TAP)</b> can't be started: the Ultimate has no remote command for that.</li>
+  <li><b>Tapes (TAP)</b> can't be started on the Ultimate: it has no remote command for that. In an emulator they work (see below).</li>
   <li><b>“Screenshot”</b> (Ultimate 64 and C64 Ultimate): what the device is showing is saved as your own
     title screen or in-game picture (320 × 200, without border) – for example for the community data.
     The same button sits next to title screen and in-game picture in “Enter details yourself”.
@@ -113,6 +114,25 @@ ScreenScraper page) in your browser.</p>
     (25 seconds by default) and takes a screenshot as your own title picture – only if the game has none yet. If you
     launch another game on the same device before that, the picture is taken for the new one. If it still shows a
     loader or an intro, replace it in the details.</li>
+</ul>
+
+<h3 id="h-emu">Launch in an emulator</h3>
+<ul>
+  <li>Without an Ultimate – or in addition – Breadbin starts games in an <b>emulator on your computer</b>, for
+    example <b>VICE</b> (free: <code>vice-emu.sourceforge.io</code>). In ⚙ Settings under “Emulator”,
+    <b>“Find VICE”</b> looks in the usual places: the search path and program folders, on Windows also Downloads,
+    Desktop, Documents and the root of every drive (e.g. <code>D:\GTK3VICE-3.9-win64</code> or
+    <code>C:\Emulators\WinVICE-3.1-x64</code>), on Linux also Flatpak and Snap. If VICE is somewhere else, pick the <code>x64sc</code> program with “Choose …”
+    (on a Mac <code>x64sc.app</code> works too).</li>
+  <li>The emulator then appears as its own entry in the device selection in the details, e.g. “x64sc (emulator)”.
+    <b>“Launch”</b> opens a new emulator window with the game. This works with PRG, P00, T64, TAP, CRT, D64, D71,
+    D81 and G64 – also from ZIP archives, network drives and an Ultimate's stick.</li>
+  <li>Breadbin puts a <b>copy</b> into its data folder for this (subfolder <code>emulator</code>). If a game saves to
+    its disk, the save ends up in that copy and is still there next time; the original stays untouched.</li>
+  <li><b>Several disks:</b> if the game belongs to a disk set, VICE gets all sides as a flip list. Insert the next
+    disk in VICE via the “Fliplist” menu (usually Alt+N; in the SDL version via the menu with F12).</li>
+  <li><b>Other emulators:</b> “Command line” says how the program is called; <code>{file}</code> is the game file.
+    The default <code>-autostart {file}</code> suits VICE.</li>
 </ul>
 
 <h3 id="h-scraper">Descriptions from ScreenScraper (optional)</h3>
@@ -250,6 +270,12 @@ device's launch folder. Passwords are kept in the system keychain, never in the 
 lists, notes, settings) and all pictures as one ZIP file. “Restore backup …” replaces the current library with it –
 for example on a new computer; the previous database stays in the data folder as
 <code>spiele.vor-wiederherstellung.sqlite</code>. Passwords are not included, they live in the keychain.</p>
+<p><b>Portable (Windows):</b> unpack the ZIP version “…-portable.zip”, for example onto a USB stick. Next to
+<code>Breadbin.exe</code> there is the folder <code>BreadbinData</code>; as long as it exists, the database, pictures,
+settings and the user interface's data stay in it and nothing is installed on the PC. If the stick gets a different
+drive letter on another PC, Breadbin rewrites the game folders on the stick at start (<code>E:\Games</code> →
+<code>F:\Games</code>). Windows stores the ScreenScraper password per PC, so enter it again on another PC. Requires
+WebView2, normally present on Windows 10 and 11.</p>
 <p>Breadbin only goes online for your devices, ScreenScraper (if set up) and 8bitcavern.de, which hosts the community
 data and a small file naming the newest Breadbin version. If a newer version exists, the status bar shows
 “Breadbin … is available” – a click opens the download page. Both can be switched off in ⚙.

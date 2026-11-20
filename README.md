@@ -49,10 +49,20 @@ has a built-in manual (“?” button or F1).
 - Copy marked games to a folder on the device, to find them in the Ultimate menu without a computer
 - Device status, switch on via Wake-on-WiFi, switch off, search the network, browse device folders
 
+**Emulator**
+- Launch games without an Ultimate in an emulator on your computer, e.g. VICE (`x64sc`) – all formats
+  including TAP, also from ZIP archives; saved games stay in the copy, disk sets get a flip list. Other
+  emulators can be added with their own command line.
+
 ## Download and first start
 
 Packages are on the [releases page](../../releases): macOS (universal DMG for Apple Silicon and
-Intel), Windows (MSI or EXE installer) and Linux (AppImage, deb, rpm).
+Intel), Windows (MSI or EXE installer, plus a portable ZIP version for a USB stick) and Linux
+(AppImage, deb, rpm).
+
+**Portable (Windows):** unpack `Breadbin_…_x64-portable.zip`. As long as the folder `BreadbinData` sits next to
+`Breadbin.exe`, all data stays in it; a different drive letter of the stick is handled at start. Requires WebView2
+(normally present on Windows 10/11).
 
 Breadbin is not signed with a paid certificate, so the systems warn on the first start:
 

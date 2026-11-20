@@ -2,6 +2,27 @@
 
 English first, German below each version. / Englisch zuerst, Deutsch jeweils darunter.
 
+## Unreleased / noch nicht veröffentlicht
+
+- Launch games in an emulator on your computer (VICE `x64sc` by default, other emulators via their own command
+  line): Settings → Emulator, then pick the emulator in the device selection of the details. Works with all formats
+  including TAP, also from ZIP archives, network drives and an Ultimate's stick; saves stay in Breadbin's copy, disk
+  sets get a VICE flip list.
+- Spiele in einem Emulator auf dem Rechner starten (Standard VICE `x64sc`, andere Emulatoren über eine eigene
+  Aufrufzeile): Einstellungen → Emulator, dann in den Details den Emulator in der Geräteauswahl wählen. Geht mit allen
+  Formaten einschließlich TAP, auch aus ZIP-Archiven, von Netzlaufwerken und vom Stick eines Ultimate; Spielstände
+  bleiben in Breadbins Kopie, Diskettenreihen bekommen eine VICE-Wechselliste.
+- Portable Windows version (`Breadbin_…_x64-portable.zip`): with the folder `BreadbinData` next to `Breadbin.exe`,
+  database, pictures, settings and the WebView data stay there; game folders on the stick follow a changed drive
+  letter. / Tragbare Windows-Fassung (`Breadbin_…_x64-portable.zip`): Mit dem Ordner `BreadbinData` neben
+  `Breadbin.exe` bleiben Datenbank, Bilder, Einstellungen und die WebView-Daten dort; Spieleordner auf dem Stick
+  folgen einem geänderten Laufwerksbuchstaben.
+- "Find VICE" also searches Downloads, Desktop, Documents and the root of every drive on Windows (VICE only comes as
+  a ZIP there), and user Flatpak, Snap and `~/.local/bin` on Linux. / „VICE suchen“ sucht unter Windows auch in
+  Downloads, Desktop, Dokumente und in der Wurzel aller Laufwerke (VICE gibt es dort nur als ZIP), unter Linux auch
+  in Benutzer-Flatpak, Snap und `~/.local/bin`.
+- German texts: remaining wrong gender for the Ultimate fixed. / Deutsche Texte: letzte „die Ultimate“ korrigiert.
+
 ## 0.9.1 (2026-11-13)
 
 - Built-in manual updated (server choice for community data, link to the public data repository, note on anonymous
