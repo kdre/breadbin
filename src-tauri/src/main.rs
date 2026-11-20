@@ -248,6 +248,10 @@ async fn community_auto_update(
     Ok(Some(report))
 }
 
+/// Beim Start höchstens so oft (Sekunden) nach einer neuen Fassung fragen; der Knopf im Über-Dialog
+/// fragt immer.
+const UPDATE_INTERVAL: i64 = 6 * 3600;
+
 /// Neue Breadbin-Fassung? Beim Start höchstens einmal am Tag (mit `force` immer), nur wenn
 /// eingeschaltet. `None` = keine neuere Fassung.
 #[tauri::command]
@@ -258,9 +262,10 @@ async fn check_update(
     {
         let conn = state.conn.lock().unwrap();
         if !force
-            && (!scraper::flag_on(&conn, "update_check") || !due(&conn, "update_checked", 86400))
+            && (!scraper::flag_on(&conn, "update_check")
+                || !due(&conn, "update_checked", UPDATE_INTERVAL))
         {
-            // Schon heute gesehen: die gemerkte Fassung weiter anzeigen.
+            // Eben erst nachgesehen: die gemerkte Fassung weiter anzeigen.
             let seen = db::get_setting(&conn, "update_seen")
                 .ok()
                 .flatten()

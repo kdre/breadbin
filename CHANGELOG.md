@@ -2,6 +2,13 @@
 
 English first, German below each version. / Englisch zuerst, Deutsch jeweils darunter.
 
+## 0.9.3 (2026-11-20)
+
+- Short version history in the About dialog. / Kurzer Versionsverlauf im Dialog „Über Breadbin“.
+- New version check at start every six hours at most (was once a day), plus "Check for a new version" in the About
+  dialog. / Prüfung auf eine neue Fassung beim Start höchstens alle sechs Stunden (bisher einmal am Tag), dazu
+  „Nach neuer Fassung suchen“ im Dialog „Über Breadbin“.
+
 ## 0.9.2 (2026-11-20)
 
 - Launch games in an emulator on your computer (VICE `x64sc` by default, other emulators via their own command

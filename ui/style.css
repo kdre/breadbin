@@ -409,6 +409,12 @@ dialog#about-dialog { width: min(560px, 94vw); font-size: 13.5px; line-height: 1
 .about-head { display: flex; gap: 14px; align-items: center; margin-bottom: 6px; }
 .about-head img { image-rendering: auto; }
 .about-head h3 { margin: 0; font-size: 20px; }
+.about-versions { margin: 8px 0; }
+.about-versions summary { cursor: pointer; font-weight: 600; }
+.about-versions h5 { margin: 8px 0 2px; font-size: 13px; }
+.about-versions h5 span { font-weight: 400; color: var(--muted); }
+.about-versions ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.about-update { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
 #about-dialog h4 { margin: 14px 0 4px; }
 #about-dialog a { color: var(--accent); }
 .about-list { padding-left: 18px; margin: 4px 0; }

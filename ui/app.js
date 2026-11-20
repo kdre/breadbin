@@ -1647,7 +1647,28 @@ document.addEventListener("keydown", (ev) => {
 
 $("#btn-about").addEventListener("click", async () => {
   try { $("#about-version").textContent = await invoke("plugin:app|version"); } catch { /* bleibt leer */ }
+  $("#about-update-msg").textContent = "";
+  $("#about-versions").innerHTML = VERSIONS.map((r) =>
+    `<h5>${esc(r.v)} <span>${esc(new Date(r.date).toLocaleDateString(LOCALE))}</span></h5>`
+    + `<ul>${(LANG === "en" ? r.en : r.de).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`).join("");
   $("#about-dialog").showModal();
+});
+// Sofort nachsehen, ohne die Sperre der Prüfung beim Start.
+$("#about-update").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget, msg = $("#about-update-msg");
+  btn.disabled = true;
+  msg.textContent = t("Sehe nach …");
+  try {
+    const info = await invoke("check_update", { force: true });
+    showUpdate(info);
+    msg.textContent = info
+      ? t("Breadbin {v} ist da – unten in der Statuszeile auf den Hinweis klicken.", { v: info.version })
+      : t("Du hast die neueste Fassung.");
+  } catch (e) {
+    msg.textContent = t("Nachsehen fehlgeschlagen: {e}", { e: String(e) });
+  } finally {
+    btn.disabled = false;
+  }
 });
 $("#about-dialog").addEventListener("click", (ev) => {
   const a = ev.target.closest("a[data-url]");
