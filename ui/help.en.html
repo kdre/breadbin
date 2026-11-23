@@ -3,7 +3,7 @@
   <a href="#h-sources">Sources and scanning</a>
   <a href="#h-list">The list</a>
   <a href="#h-details">Details</a>
-  <a href="#h-devices">Ultimate devices</a>
+  <a href="#h-devices">Devices (Ultimate, BMC64, TeensyROM)</a>
   <a href="#h-launch">Launch and insert</a>
   <a href="#h-emu">Emulator</a>
   <a href="#h-scraper">Descriptions</a>
@@ -39,6 +39,9 @@ Ultimate 64, a C64 Ultimate or a 1541 Ultimate II+ – or in an emulator such as
     directories and T64 contents are read and searchable.</li>
   <li><b>↻</b> rescans a source, “Scan all” scans them one after another. A second scan only reads what
     changed, so it is fast. Cancel it in the status bar at the bottom.</li>
+  <li>After a scan Breadbin reports which files are <b>new</b> and which are <b>missing</b> (deleted, moved or
+    renamed). Missing files disappear from the library.
+    Without changes there is no message, after the first scan of a source just the number.</li>
   <li>If a network drive is unreachable, Breadbin does <b>not</b> delete any entries.</li>
   <li><b>Device sticks</b> as a source: in the device's <b>⋯ menu → “Folder as source”</b>. Files are read
     via FTP; the first scan of a full stick takes a long time.</li>
@@ -59,6 +62,8 @@ Ultimate 64, a C64 Ultimate or a 1541 Ultimate II+ – or in an emulator such as
     trainer tags like “+10HDG”, versions and dates are ignored.</li>
   <li><b>💾N</b> next to a title: a game with N disks or sides.</li>
   <li>The ● after a title means “description available”, ★ marks favorites.</li>
+  <li><b>All results</b> are in the list, even with very large collections; more rows appear as you scroll. The number
+    of results is shown top right.</li>
   <li><b>“Random game”</b> (or key <kbd>Z</kbd>) shows a random game from the current results – works together with
     filters and lists, e.g. “a random classic”.</li>
   <li><b>“Export”</b> saves the current list as a CSV file (e.g. for Excel).</li>
@@ -72,10 +77,27 @@ Ultimate 64, a C64 Ultimate or a 1541 Ultimate II+ – or in an emulator such as
 enlarge it. <b>“Search the web”</b> opens CSDb, GameBase64, Lemon64 and the C64-Wiki (and the
 ScreenScraper page) in your browser.</p>
 
-<h3 id="h-devices">Ultimate devices</h3>
+<h3 id="h-devices">Devices (Ultimate, BMC64, TeensyROM)</h3>
 <ul>
-  <li>Supported: Ultimate 64 (Elite), C64 Ultimate and 1541 Ultimate II+ (untested). FTP and “Web Remote
+  <li>Supported: Ultimate 64 (Elite, Elite II), C64 Ultimate and the 1541 Ultimate II, II+ and II+L cartridges (untested; the II
+    without plus needs a USB network adapter). With the cartridge, screenshots, automatic title pictures and powering off are
+    not available – Breadbin hides them. FTP and “Web Remote
     Control” must be enabled in the device menu.</li>
+  <li><b>BMC64</b> (bare-metal VICE on the Raspberry Pi, tested with a Pi 3B+ and BMC64 5.5.2): enable networking
+    (Ethernet or Wi-Fi) and the <b>Web UI</b> in the BMC64 menu. Breadbin uploads games through the web interface to the
+    SD card or a USB stick on the Pi (launch folder e.g. <code>/SD/Breadbin</code>) and starts them via autostart – all
+    formats including T64 and TAP. “Search network” finds BMC64 too; if you set a PIN, enter it in the password field
+    under “Edit”. Needs BMC64 5.5.1 or later (5.5.0 often aborts larger uploads). Not possible: swapping disks without a
+    restart, screenshots, switching on and off from the app. An inserted cartridge stays in for the next launch – remove
+    it in the BMC64 menu. BMC64 only starts what the machine it is currently running can handle (C64, C128, VIC-20 …).</li>
+  <li><b>TeensyROM</b> (cartridge with a Teensy 4.1) – <b>untested</b>: built from the maker's protocol description,
+    without a real device. Turn on <b>“Enable TCP Listener”</b> on the TeensyROM and enter its address by hand (port 2112;
+    “Search network” does not find it). Launch folder on the SD card (<code>/SD/Breadbin</code>) or the USB stick
+    (<code>/USB/Breadbin</code>); cartridges over 850 KB only from SD. Launchable: PRG, P00, T64 (first program), CRT and
+    disks with a <i>single</i> program file (Breadbin sends it as a PRG). Multi-file disk games, G64 and TAP do not work,
+    nor do disk swaps, saved games and screenshots. While a game runs, the TeensyROM accepts no files: “Launch” then
+    resets it; “Empty launch folder” and scans only work while its menu is shown. Feedback from TeensyROM owners is
+    welcome.</li>
   <li><b>Launch folder</b>: Breadbin copies games there that aren't on the device yet. <b>⋯ → “Empty
     launch folder”</b> only deletes files Breadbin put there – disks with saved games stay.</li>
   <li><b>Saved games</b>: if a game saves to a disk Breadbin copied over, the file in the launch folder changes.
@@ -102,10 +124,17 @@ ScreenScraper page) in your browser.</p>
     running game.</li>
   <li><b>Multi-disk games</b>: “Disks” lists every disk/side in order – “Launch” on disk 1, “Insert” on each.
     Detected from the name (“Side 2”, “Disk 1”, “s1”) or from the folder (SUMMER1A, SUMMER1B, SUMMER1C).</li>
-  <li><b>Tapes (TAP)</b> can't be started on the Ultimate: it has no remote command for that. In an emulator they work (see below).</li>
+  <li><b>Tapes (TAP)</b> can't be started on the Ultimate: it has no remote command for that. On BMC64 and in an emulator they work (see below).</li>
+  <li><b>Games with a REU image</b> (Ultimate 64, C64 Ultimate, 1541 Ultimate): if a <code>.reu</code> file with the
+    same name lies next to the game file (e.g. Myst 64REU), Breadbin copies it to the launch folder, switches on “RAM
+    Expansion Unit” and “Command Interface”, sets a matching REU size and loads the file into the REU before the game
+    starts (a few seconds, depending on size). Breadbin changes these settings only temporarily, not permanently; the
+    earlier values come back with the next start without a REU image on the same device, or at the latest after
+    switching off and on. BMC64 and TeensyROM cannot do this.</li>
   <li><b>“Screenshot”</b> (Ultimate 64 and C64 Ultimate): what the device is showing is saved as your own
     title screen or in-game picture (320 × 200, without border) – for example for the community data.
-    The same button sits next to title screen and in-game picture in “Enter details yourself”.
+    “In-game” takes the next free one of the four in-game slots (if all are full, slot 4 is replaced). The same button
+    sits next to every picture slot in “Enter details yourself”.
     The Ultimate briefly sends its picture as a video stream; other receivers (such as a jukebox) lose it
     meanwhile. <b>Network cable required:</b> the Ultimate sends the video stream over Ethernet only; a device that is
     only on Wi-Fi delivers no picture. If no picture arrives despite the cable, a firewall may be blocking incoming UDP
@@ -119,20 +148,34 @@ ScreenScraper page) in your browser.</p>
 <h3 id="h-emu">Launch in an emulator</h3>
 <ul>
   <li>Without an Ultimate – or in addition – Breadbin starts games in an <b>emulator on your computer</b>, for
-    example <b>VICE</b> (free: <code>vice-emu.sourceforge.io</code>). In ⚙ Settings under “Emulator”,
-    <b>“Find VICE”</b> looks in the usual places: the search path and program folders, on Windows also Downloads,
+    example <b>VICE</b> (free: <code>vice-emu.sourceforge.io</code>) or <b>Denise</b> (free:
+    <code>deniseemu.sourceforge.io</code>). In ⚙ Settings under “Emulators”,
+    <b>“Find emulators”</b> looks in the usual places: the search path and program folders, on Windows also Downloads,
     Desktop, Documents and the root of every drive (e.g. <code>D:\GTK3VICE-3.9-win64</code> or
-    <code>C:\Emulators\WinVICE-3.1-x64</code>), on Linux also Flatpak and Snap. If VICE is somewhere else, pick the <code>x64sc</code> program with “Choose …”
-    (on a Mac <code>x64sc.app</code> works too).</li>
-  <li>The emulator then appears as its own entry in the device selection in the details, e.g. “x64sc (emulator)”.
+    <code>C:\Emulators\WinVICE-3.1-x64</code>), on Linux also Flatpak and Snap. If an emulator is somewhere else, use “Add emulator” and “Choose …” to pick the <code>x64sc</code> program with “Choose …”
+    (on a Mac <code>x64sc.app</code> works too), for Denise the <code>Denise</code> program or <code>Denise.app</code>.</li>
+  <li><b>Several emulators</b> (up to eight) are possible, each with its own command line; ✕ removes one. Each
+    appears as its own entry in the device selection in the details, e.g. “x64sc (emulator)” and “denise (emulator)” –
+    you pick one just like a device.
     <b>“Launch”</b> opens a new emulator window with the game. This works with PRG, P00, T64, TAP, CRT, D64, D71,
     D81 and G64 – also from ZIP archives, network drives and an Ultimate's stick.</li>
   <li>Breadbin puts a <b>copy</b> into its data folder for this (subfolder <code>emulator</code>). If a game saves to
     its disk, the save ends up in that copy and is still there next time; the original stays untouched.</li>
   <li><b>Several disks:</b> if the game belongs to a disk set, VICE gets all sides as a flip list. Insert the next
-    disk in VICE via the “Fliplist” menu (usually Alt+N; in the SDL version via the menu with F12).</li>
+    disk in VICE via the “Fliplist” menu (usually Alt+N; in the SDL version via the menu with F12). Other emulators
+    only get the launched disk; the others are in the <code>emulator</code> subfolder and can be inserted from there
+    via the emulator's drive menu.</li>
   <li><b>Other emulators:</b> “Command line” says how the program is called; <code>{file}</code> is the game file.
-    The default <code>-autostart {file}</code> suits VICE.</li>
+    The default <code>-autostart {file}</code> suits VICE; with Denise selected, Breadbin uses just <code>{file}</code>
+    on its own (Denise starts files passed to it by itself). Denise options are e.g. <code>-sid-8580</code>,
+    <code>-vic-6567R8</code> (NTSC) or <code>-reu 512</code>.</li>
+  <li><b>Options for a single game:</b> with the emulator selected in the details, “Options for this game” appears below,
+    e.g. <code>-ntsc</code> for an NTSC game or <code>-reu</code> for a RAM expansion. They apply to all versions of the
+    game, separately for each kind of emulator (VICE, Denise …), and come before the general options from the settings. Clearing the field removes them.</li>
+  <li><b>Games with a REU image:</b> some games need a RAM expansion (REU) that already holds data when they start,
+    e.g. Myst 64REU. If a <code>.reu</code> file with the same name lies next to the game file (<code>myst.prg</code> +
+    <code>myst.reu</code>), Breadbin loads it in VICE and Denise by itself (REU size to match the file, at most 16 MB).
+    Other emulators do not get it.</li>
 </ul>
 
 <h3 id="h-scraper">Descriptions from ScreenScraper (optional)</h3>
@@ -172,7 +215,8 @@ ScreenScraper page) in your browser.</p>
 <h3 id="h-own">Your own details</h3>
 <ul>
   <li><b>“Enter details yourself”</b> (also for several marked rows): title, year, publisher, developer, genre, players,
-    description and your own pictures (title screen, in-game shot, box). Your own details always come first; no fetch and
+    description and your own pictures (title screen, up to four in-game shots, box – the slot for the next shot appears once
+    the previous one is filled). Your own details always come first; no fetch and
     no exchange file overwrites them. A picture saved as the wrong kind moves with “Use as in-game” or “Use as
     title screen”; if there is already one there, the two swap places.</li>
   <li><b>Description in German and English:</b> the dialog has one field per language; one is enough. The app shows the

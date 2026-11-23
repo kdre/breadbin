@@ -2,6 +2,7 @@
 
 pub mod awake;
 pub mod backup;
+pub mod bmc64;
 pub mod db;
 pub mod emulator;
 pub mod formats;
@@ -12,8 +13,11 @@ pub mod metadata;
 pub mod names;
 pub mod petscii;
 pub mod power;
+pub mod remote;
+pub mod reu;
 pub mod scan;
 pub mod screenscraper;
 pub mod screenshot;
 pub mod share;
+pub mod teensyrom;
 pub mod update;

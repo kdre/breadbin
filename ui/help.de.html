@@ -3,7 +3,7 @@
   <a href="#h-sources">Quellen und Scannen</a>
   <a href="#h-list">Die Liste</a>
   <a href="#h-details">Details</a>
-  <a href="#h-devices">Ultimate-Geräte</a>
+  <a href="#h-devices">Geräte (Ultimate, BMC64, TeensyROM)</a>
   <a href="#h-launch">Starten und Einlegen</a>
   <a href="#h-emu">Emulator</a>
   <a href="#h-scraper">Beschreibungen</a>
@@ -40,6 +40,9 @@ einem Ultimate 64, einem C64 Ultimate oder einem 1541 Ultimate II+ – oder in e
     Disk-Verzeichnisse und T64-Inhalte werden gelesen und sind durchsuchbar.</li>
   <li><b>↻</b> scannt eine Quelle neu, „Alle scannen“ alle nacheinander. Ein zweiter Scan liest nur
     Geändertes und ist deshalb schnell. Abbrechen geht unten in der Statusleiste.</li>
+  <li>Nach dem Scan meldet Breadbin, welche Dateien <b>neu</b> dazugekommen sind und welche <b>fehlen</b> (gelöscht,
+    verschoben oder umbenannt). Fehlende Dateien verschwinden aus der Bibliothek.
+    Ohne Änderungen kommt keine Meldung, beim ersten Scan einer Quelle nur die Zahl.</li>
   <li>Ist ein Netzlaufwerk gerade nicht erreichbar, löscht Breadbin <b>keine</b> Einträge.</li>
   <li><b>Gerätesticks</b> als Quelle: beim Gerät im Menü <b>⋯ → „Ordner als Quelle“</b>. Dateien werden
     per FTP gelesen; der erste Scan dauert bei vollen Sticks lange.</li>
@@ -58,6 +61,8 @@ einem Ultimate 64, einem C64 Ultimate oder einem 1541 Ultimate II+ – oder in e
   <li><b>„Gleiche Spiele zusammenfassen“</b>: D64, Modul, Cracks und Arbeitsstände eines Spiels stehen in
     einer Zeile (×N = Anzahl Fassungen). Erkannt über die ScreenScraper-Spielnummer und den bereinigten
     Namen – Trainer-Kennungen wie „+10HDG“, Versionen und Datumsangaben zählen dabei nicht.</li>
+  <li><b>Alle Treffer</b> stehen in der Liste, auch bei sehr großen Sammlungen; weitere Zeilen erscheinen beim Blättern.
+    Oben rechts steht die Zahl der Treffer.</li>
   <li><b>💾N</b> am Titel: ein Spiel mit N Disketten oder Seiten.</li>
   <li>Der ● hinter dem Titel bedeutet „Beschreibung vorhanden“, ★ markiert Favoriten.</li>
   <li><b>„Zufallsspiel“</b> (oder Taste <kbd>Z</kbd>) zeigt ein zufälliges Spiel aus den aktuellen Treffern – mit Filter
@@ -73,10 +78,27 @@ einem Ultimate 64, einem C64 Ultimate oder einem 1541 Ultimate II+ – oder in e
 sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase64, Lemon64 und im C64-Wiki
 (und die Seite bei ScreenScraper) im Browser.</p>
 
-<h3 id="h-devices">Ultimate-Geräte</h3>
+<h3 id="h-devices">Geräte (Ultimate, BMC64, TeensyROM)</h3>
 <ul>
-  <li>Unterstützt: Ultimate 64 (Elite), C64 Ultimate und 1541 Ultimate II+ (dort ungetestet). Nötig sind
+  <li>Unterstützt: Ultimate 64 (Elite, Elite II), C64 Ultimate und das Steckmodul 1541 Ultimate II, II+ und II+L (dort ungetestet;
+    der II ohne Plus braucht einen USB-Netzwerkadapter). Beim Steckmodul fallen Bildschirmfoto, automatisches Titelbild und
+    Ausschalten weg – Breadbin blendet sie aus. Nötig sind
     im Gerätemenü FTP und die „Web Remote Control“.</li>
+  <li><b>BMC64</b> (VICE ohne Betriebssystem auf dem Raspberry Pi, getestet mit Pi 3B+ und BMC64 5.5.2): Im BMC64-Menü
+    das Netzwerk (Ethernet oder WLAN) und die <b>Web UI</b> einschalten. Breadbin lädt die Spiele über die Weboberfläche
+    auf die SD-Karte bzw. einen USB-Stick am Pi (Startordner z. B. <code>/SD/Breadbin</code>) und startet sie per
+    Autostart – alle Formate einschließlich T64 und TAP. „Im Netz suchen“ findet BMC64 ebenfalls; eine gesetzte PIN gehört
+    in „Bearbeiten“ ins Passwortfeld. Ab BMC64 5.5.1 (5.5.0 bricht größere Uploads oft ab). Nicht möglich: Diskwechsel ohne
+    Neustart, Bildschirmfotos, Ein- und Ausschalten aus der App. Ein eingelegtes Modul bleibt beim nächsten Start stecken
+    – im BMC64-Menü entfernen. BMC64 startet nur, was die gerade laufende Maschine kann (C64, C128, VIC-20 …).</li>
+  <li><b>TeensyROM</b> (Modul mit Teensy 4.1) – <b>ungetestet</b>: gebaut nach der Protokoll-Beschreibung des Herstellers,
+    ohne echtes Gerät. Am TeensyROM <b>„Enable TCP Listener“</b> einschalten und die Adresse von Hand eintragen (Port 2112,
+    „Im Netz suchen“ findet ihn nicht). Startordner auf der SD-Karte (<code>/SD/Breadbin</code>) oder dem USB-Stick
+    (<code>/USB/Breadbin</code>); Module über 850 KB nur von SD. Startbar: PRG, P00, T64 (erstes Programm), CRT und
+    Disketten mit <i>einer</i> Programmdatei (Breadbin schickt diese als PRG). Mehrteilige Disk-Spiele, G64 und TAP gehen
+    nicht, ebenso Diskwechsel, Spielstände und Bildschirmfotos. Läuft gerade ein Spiel, nimmt der TeensyROM keine Dateien an:
+    „Starten“ setzt ihn dann zurück; „Startordner leeren“ und Scans gehen nur, während sein Menü angezeigt wird.
+    Rückmeldungen von TeensyROM-Besitzern sind willkommen.</li>
   <li><b>Startordner</b>: Dorthin kopiert Breadbin Spiele, die nicht schon auf dem Gerät liegen. Im Menü
     <b>⋯ → „Startordner leeren“</b> löscht nur Dateien, die Breadbin dort abgelegt hat – Disketten mit Spielstand
     bleiben liegen.</li>
@@ -105,10 +127,17 @@ sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase
   <li><b>Diskettenreihen</b>: Unter „Disketten“ steht jede Disk/Seite in der richtigen Reihenfolge – bei
     Disk 1 „Starten“, bei jeder „Einlegen“. Erkannt über den Namen („Side 2“, „Disk 1“, „s1“) oder über
     den Ordner (SUMMER1A, SUMMER1B, SUMMER1C).</li>
-  <li><b>Bänder (TAP)</b> lassen sich auf dem Ultimate nicht starten: Er hat dafür keinen Fernsteuerbefehl. Im Emulator gehen sie (siehe unten).</li>
+  <li><b>Bänder (TAP)</b> lassen sich auf dem Ultimate nicht starten: Er hat dafür keinen Fernsteuerbefehl. Auf BMC64 und im Emulator gehen sie (siehe unten).</li>
+  <li><b>Spiele mit REU-Abbild</b> (Ultimate 64, C64 Ultimate, 1541 Ultimate): Liegt neben der Spieldatei eine
+    <code>.reu</code>-Datei mit gleichem Namen (z. B. Myst 64REU), kopiert Breadbin sie in den Startordner, schaltet
+    „RAM Expansion Unit“ und „Command Interface“ ein, stellt die REU-Größe passend ein und lädt die Datei ins REU, bevor
+    das Spiel startet (je nach Größe einige Sekunden). Die Einstellungen ändert Breadbin nur vorübergehend, nicht dauerhaft;
+    beim nächsten Start ohne REU-Abbild auf demselben Gerät kommen die vorherigen Werte zurück, spätestens nach dem
+    Aus- und Einschalten. BMC64 und TeensyROM können das nicht.</li>
   <li><b>„Bildschirmfoto“</b> (Ultimate 64 und C64 Ultimate): Was das Gerät gerade zeigt, wird als eigenes
     Titelbild oder eigene Spielszene gespeichert (320 × 200, ohne Rahmen) – etwa für die
-    Gemeinschaftsdaten. Denselben Knopf gibt es im Dialog „Angaben selbst eintragen“ bei Titelbild und Spielszene.
+    Gemeinschaftsdaten. „Spielszene“ belegt den nächsten freien der vier Szenenplätze (sind alle voll, wird Szene 4
+    ersetzt). Denselben Knopf gibt es im Dialog „Angaben selbst eintragen“ bei jedem Bildplatz.
     Der Ultimate schickt sein Bild dafür kurz als Videostrom; andere Empfänger (z. B. eine
     Jukebox) verlieren ihn dabei. <b>Nur mit Netzwerkkabel:</b> Den Videostrom schickt der Ultimate ausschließlich über
     Ethernet; ein Gerät, das nur per WLAN im Netz hängt, liefert kein Bild. Kommt trotz Kabel kein Bild an, blockiert
@@ -122,12 +151,15 @@ sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase
 <h3 id="h-emu">Im Emulator starten</h3>
 <ul>
   <li>Ohne Ultimate – oder zusätzlich – startet Breadbin Spiele in einem <b>Emulator auf dem Rechner</b>, etwa in
-    <b>VICE</b> (kostenlos: <code>vice-emu.sourceforge.io</code>). In ⚙ Einstellungen unter „Emulator“ findet
-    <b>„VICE suchen“</b> die üblichen Orte: Suchpfad und Programmordner, unter Windows auch Downloads, Desktop,
+    <b>VICE</b> (kostenlos: <code>vice-emu.sourceforge.io</code>) oder <b>Denise</b> (kostenlos:
+    <code>deniseemu.sourceforge.io</code>). In ⚙ Einstellungen unter „Emulatoren“ findet
+    <b>„Emulatoren suchen“</b> die üblichen Orte: Suchpfad und Programmordner, unter Windows auch Downloads, Desktop,
     Dokumente und die Wurzel aller Laufwerke (z. B. <code>D:\GTK3VICE-3.9-win64</code> oder
-    <code>C:\Emulatoren\WinVICE-3.1-x64</code>), unter Linux auch Flatpak und Snap. Liegt VICE woanders, mit „Auswählen …“ das Programm <code>x64sc</code> wählen
-    (am Mac geht auch <code>x64sc.app</code>).</li>
-  <li>Danach steht der Emulator als eigener Eintrag in der Geräteauswahl der Details, z. B. „x64sc (Emulator)“.
+    <code>C:\Emulatoren\WinVICE-3.1-x64</code>), unter Linux auch Flatpak und Snap. Liegt ein Emulator woanders, mit „Emulator hinzufügen“ und „Auswählen …“ das Programm <code>x64sc</code> wählen
+    (am Mac geht auch <code>x64sc.app</code>), für Denise das Programm <code>Denise</code> bzw. <code>Denise.app</code>.</li>
+  <li><b>Mehrere Emulatoren</b> (bis zu acht) sind möglich, jeder mit eigenem Aufruf; ✕ entfernt einen.
+    Jeder steht als eigener Eintrag in der Geräteauswahl der Details, z. B. „x64sc (Emulator)“ und „denise (Emulator)“ –
+    ausgewählt wird wie bei den Geräten.
     <b>„Starten“</b> öffnet ein neues Emulator-Fenster mit dem Spiel. Das geht mit PRG, P00, T64, TAP, CRT, D64,
     D71, D81 und G64 – auch aus ZIP-Archiven, von Netzlaufwerken und vom Stick eines Ultimate.</li>
   <li>Breadbin legt dafür eine <b>Kopie</b> im Datenordner ab (Unterordner <code>emulator</code>). Speichert ein
@@ -135,9 +167,20 @@ sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase
     bleibt unverändert.</li>
   <li><b>Mehrere Disketten:</b> Gehört das Spiel zu einer Diskettenreihe, bekommt VICE alle Seiten als Wechselliste
     (Fliplist). Die nächste Diskette legst du in VICE über das Menü „Fliplist“ ein (meist Alt+N; in der SDL-Fassung
-    über das Menü mit F12).</li>
+    über das Menü mit F12). Andere Emulatoren bekommen nur die gestartete Diskette; die übrigen liegen im
+    Unterordner <code>emulator</code> und lassen sich dort über das Laufwerksmenü einlegen.</li>
   <li><b>Andere Emulatoren:</b> Unter „Aufruf“ steht, wie das Programm aufgerufen wird; <code>{file}</code> ist die
-    Spieldatei. Für VICE passt die Vorgabe <code>-autostart {file}</code>.</li>
+    Spieldatei. Für VICE passt die Vorgabe <code>-autostart {file}</code>; ist Denise eingestellt, nimmt Breadbin
+    dafür von selbst nur <code>{file}</code> (Denise startet übergebene Dateien selbst). Optionen für Denise heißen
+    z. B. <code>-sid-8580</code>, <code>-vic-6567R8</code> (NTSC) oder <code>-reu 512</code>.</li>
+  <li><b>Optionen für ein einzelnes Spiel:</b> Ist der Emulator in den Details gewählt, steht darunter „Optionen für dieses
+    Spiel“, etwa <code>-ntsc</code> für ein NTSC-Spiel oder <code>-reu</code> für eine Speichererweiterung. Sie gelten für
+    alle Fassungen des Spiels, getrennt je Art Emulator (VICE, Denise …), und kommen vor die allgemeinen Optionen aus den
+    Einstellungen. Leeren entfernt sie.</li>
+  <li><b>Spiele mit REU-Abbild:</b> Manche Spiele brauchen eine Speichererweiterung (REU), in der beim Start schon Daten
+    liegen, z. B. Myst 64REU. Liegt neben der Spieldatei eine <code>.reu</code>-Datei mit gleichem Namen
+    (<code>myst.prg</code> + <code>myst.reu</code>), lädt Breadbin sie in VICE und Denise von selbst mit
+    (REU-Größe passend zur Datei, höchstens 16 MB). Andere Emulatoren bekommen sie nicht.</li>
 </ul>
 
 <h3 id="h-scraper">Beschreibungen von ScreenScraper (freiwillig)</h3>
@@ -178,7 +221,8 @@ sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase
 <h3 id="h-own">Eigene Angaben</h3>
 <ul>
   <li><b>„Angaben selbst eintragen“</b> (auch für mehrere markierte Zeilen): Titel, Jahr, Herausgeber, Entwickler, Genre,
-    Spieler, Beschreibung und eigene Bilder (Titelbild, Spielszene, Verpackung). Eigene Angaben gehen immer vor; kein Abruf
+    Spieler, Beschreibung und eigene Bilder (Titelbild, bis zu vier Spielszenen, Verpackung – der Platz für die nächste
+    Szene erscheint, sobald die vorige belegt ist). Eigene Angaben gehen immer vor; kein Abruf
     und keine Austauschdatei überschreibt sie. Ein falsch eingeordnetes Bild verschiebst du mit „Als Spielszene“
     bzw. „Als Titelbild“; liegt dort schon eins, tauschen beide den Platz.</li>
   <li><b>Beschreibung auf Deutsch und Englisch:</b> Der Dialog hat ein Feld je Sprache; eine genügt. Die App zeigt den Text in

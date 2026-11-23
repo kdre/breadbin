@@ -4,7 +4,10 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-const LIMIT = 1000;
+// Praktisch ohne Grenze: alle Treffer kommen, angezeigt wird stückweise beim Blättern (CHUNK Zeilen).
+const LIMIT = 500000;
+const CHUNK = 300;
+let shownRows = 0;
 const $ = (sel) => document.querySelector(sel);
 
 let selectedSha1 = null;
@@ -18,6 +21,7 @@ let lastRows = [];
 // Fassungen des Spiels, dessen Details gerade zu sehen sind (beim Zusammenfassen).
 let currentGroup = [];
 let lastVariants = [];
+let lastDetailsMedia = [];
 // Mit Cmd/Strg- oder Shift-Klick markierte Zeilen (sha1 der Zeile); ab zwei gilt die Sammelansicht.
 const marked = new Set();
 let markAnchor = null;
@@ -181,7 +185,11 @@ $("#btn-cancel").addEventListener("click", () => invoke(scraping ? "cancel_scrap
 
 // ---------------------------------------------------------------- Scan
 
+// Ergebnisse der Quellen dieses Scanlaufs, für die Meldung am Ende.
+let scanResults = [];
+
 async function startScan(ids) {
+  scanResults = [];
   await invoke("start_scan", { ids });
   scanning = true;
   $("#btn-cancel").hidden = false;
@@ -204,9 +212,13 @@ listen("scan-progress", async ({ payload: ev }) => {
     return;
   }
   scanLive = null;
-  const parts = [t("{n} neu gelesen", { n: nf(p.read) }), t("{n} unverändert", { n: nf(p.unchanged) })];
+  scanResults.push({ label: ev.source_label, p });
+  const parts = [];
+  if (p.added) parts.push(t("{n} Dateien neu", { n: nf(p.added) }));
+  if (p.changed) parts.push(t("{n} geändert", { n: nf(p.changed) }));
+  parts.push(t("{n} unverändert", { n: nf(p.unchanged) }));
   if (p.quick) parts.push(t("{n} per Schnellscan übernommen", { n: nf(p.quick) }));
-  if (p.removed) parts.push(t("{n} entfernt", { n: nf(p.removed) }));
+  if (p.removed) parts.push(t("{n} fehlen", { n: nf(p.removed) }));
   if (p.errors.length) parts.push(t("{n} Fehler", { n: p.errors.length }));
   setStatus(t("{source}: {end} – {parts}",
     { source: ev.source_label, end: p.cancelled ? t("abgebrochen") : t("fertig"), parts: parts.join(", ") }));
@@ -232,7 +244,39 @@ listen("scan-finished", async () => {
   $("#btn-cancel").hidden = true;
   await loadSources();
   await loadScraperSettings();
+  showScanSummary(scanResults);
+  scanResults = [];
 });
+
+// Meldung nach dem Scan: was neu dazugekommen ist und was fehlt. Beim ersten Scan einer Quelle ist alles neu –
+// dann nur die Zahl, ohne Liste. Ohne Änderungen keine Meldung (die Statuszeile reicht).
+function showScanSummary(results) {
+  const shown = results.filter(({ p }) => p.added || p.removed);
+  if (!shown.length) return;
+  const list = (files, total) => {
+    const lines = files.map((f) => "  " + f);
+    if (total > files.length) lines.push("  " + t("… und {n} weitere", { n: nf(total - files.length) }));
+    return lines.join("\n");
+  };
+  const blocks = shown.map(({ label, p }) => {
+    const out = [label];
+    if (p.first_scan) {
+      out.push(t("Erster Scan: {n} Dateien aufgenommen.", { n: nf(p.added) }));
+    } else if (p.added) {
+      out.push(t("{n} Dateien neu:", { n: nf(p.added) }), list(p.added_files, p.added));
+    }
+    if (p.removed) {
+      out.push(t("{n} Dateien fehlen und wurden aus der Bibliothek entfernt:", { n: nf(p.removed) }),
+        list(p.removed_files, p.removed));
+    }
+    return out.join("\n");
+  });
+  const added = shown.reduce((a, { p }) => a + p.added, 0);
+  const removed = shown.reduce((a, { p }) => a + p.removed, 0);
+  $("#info-title").textContent = t("Scan: {added} neu, {removed} fehlen", { added: nf(added), removed: nf(removed) });
+  $("#info-text").textContent = blocks.join("\n\n");
+  $("#info-dialog").showModal();
+}
 
 // ---------------------------------------------------------------- Seitenleiste: Abschnitte und Menüs
 
@@ -483,7 +527,20 @@ async function runSearch() {
   $("#count").textContent = rows.length >= LIMIT
     ? t("mehr als {n} Treffer – Suche verfeinern", { n: nf(LIMIT) })
     : t("{n} Treffer", { n: nf(rows.length) });
-  $("#list tbody").innerHTML = rows.map((r) => `
+  $("#list tbody").innerHTML = "";
+  shownRows = 0;
+  renderMoreRows();
+
+  const empty = $("#empty");
+  const hasSources = $("#sources li[data-id]") !== null;
+  empty.hidden = rows.length > 0;
+  empty.textContent = hasSources ? t("Keine Treffer.") : t("Füge links einen Ordner hinzu, um deine Spiele zu erfassen.");
+}
+
+
+// Eine Zeile der Liste.
+function rowHtml(r, multi) {
+  return `
     <tr data-sha1="${r.sha1}" class="${(multi ? marked.has(r.sha1) : r.variants.includes(selectedSha1)) ? "selected" : ""}">
       <td class="star ${r.favorite ? "on" : ""}" data-star title="${t("Favorit")}">${r.favorite ? "★" : "☆"}</td>
       <td title="${esc(r.title)}">${esc(r.title)}${r.meta_status === "ok" ? `<span class="dot" title="${t("Beschreibung vorhanden")}"></span>` : ""}${r.done ? `<span class="done-mark" title="${t("Durchgespielt")}">✓</span>` : ""}${r.rating ? `<span class="rating-mark" title="${t("Eigene Bewertung: {n} von 5", { n: r.rating })}">${"★".repeat(r.rating)}</span>` : ""}${r.disks ? `<span class="disks" title="${t("Diskettenreihe: {n} Disks bzw. Seiten", { n: r.disks })}">💾${r.disks}</span>` : ""}</td>
@@ -493,13 +550,28 @@ async function runSearch() {
       <td title="${r.variants.length > 1 ? t("{n} Fassungen", { n: r.variants.length }) : ""}">${r.formats.split(", ").map((f) => `<span class="badge">${esc(f)}</span>`).join(" ")}${r.variants.length > 1 ? `<span class="variants">×${r.variants.length}</span>` : ""}</td>
       <td title="${esc(tDetail(r.detail))}">${esc(r.image_name || tDetail(r.detail))}</td>
       <td class="num">${r.locations}</td>
-    </tr>`).join("");
-
-  const empty = $("#empty");
-  const hasSources = $("#sources li[data-id]") !== null;
-  empty.hidden = rows.length > 0;
-  empty.textContent = hasSources ? t("Keine Treffer.") : t("Füge links einen Ordner hinzu, um deine Spiele zu erfassen.");
+    </tr>`;
 }
+
+// Nächste Zeilen anhängen (beim Blättern, oder bis `upto` sichtbar ist).
+function renderMoreRows(upto = 0) {
+  const end = Math.min(lastRows.length, Math.max(shownRows + CHUNK, upto + 1));
+  if (end <= shownRows) return;
+  const multi = marked.size > 1;
+  $("#list tbody").insertAdjacentHTML("beforeend", lastRows.slice(shownRows, end).map((r) => rowHtml(r, multi)).join(""));
+  shownRows = end;
+}
+
+// Sorgt dafür, dass die Zeile zu `sha1` (auch eine Fassung davon) schon angezeigt wird.
+function ensureRowShown(sha1) {
+  const i = lastRows.findIndex((r) => r.sha1 === sha1 || r.variants.includes(sha1));
+  if (i >= shownRows) renderMoreRows(i);
+}
+
+$("#list-wrap").addEventListener("scroll", (ev) => {
+  const el = ev.currentTarget;
+  if (el.scrollTop + el.clientHeight > el.scrollHeight - 800) renderMoreRows();
+});
 
 $("#search").addEventListener("input", () => {
   clearTimeout(searchTimer);
@@ -606,6 +678,7 @@ function randomGame() {
   marked.clear();
   markAnchor = pick.sha1;
   document.querySelectorAll("#list tr.selected").forEach((r) => r.classList.remove("selected"));
+  ensureRowShown(pick.sha1);
   const tr = document.querySelector(`#list tr[data-sha1="${pick.sha1}"]`);
   tr?.classList.add("selected");
   tr?.scrollIntoView({ block: "center" });
@@ -691,6 +764,7 @@ document.addEventListener("keydown", (ev) => {
   }
   if (ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
   const cur = $("#list tr.selected");
+  if (cur && ev.key === "ArrowDown" && !cur.nextElementSibling) renderMoreRows();
   const next = cur ? (ev.key === "ArrowDown" ? cur.nextElementSibling : cur.previousElementSibling)
                    : $("#list tbody tr");
   if (!next) return;
@@ -739,6 +813,7 @@ async function showDetails(sha1) {
   ]);
   if (selectedSha1 !== sha1) return; // inzwischen etwas anderes gewählt
   lastVariants = variants;
+  lastDetailsMedia = d.media;
   const r = d.row;
   const info = [
     [t("Format"), r.format],
@@ -1180,7 +1255,7 @@ let proposeGame = null;
 
 function propLabel(typ) {
   const f = PROPOSE_FIELDS.find(([t2]) => t2 === typ);
-  return f ? t(f[1]) : t({ ss: "Spielszene", sstitle: "Titelbild", "box-2D": "Verpackung" }[typ] ?? typ);
+  return f ? t(f[1]) : t(KIND_LABEL[typ] ?? typ);
 }
 
 async function openPropose(d) {
@@ -1205,10 +1280,10 @@ async function openPropose(d) {
       ${input(typ, kind)}
       <div class="meta now" data-now>${t("Bei ScreenScraper: lade …")}</div>
     </div>`).join("")
-    + d.media.filter(([, file]) => file.startsWith("own_")).map(([kind, file]) => `
+    + d.media.filter(([kind, file]) => file.startsWith("own_") && !/^ss\d$/.test(kind)).map(([kind, file]) => `
     <div class="prop-row" data-media="${esc(kind)}" data-file="${esc(file)}">
       <label class="inline"><input type="checkbox" data-check checked>
-        <strong>${t({ ss: "Spielszene", sstitle: "Titelbild", "box-2D": "Verpackung" }[kind] ?? kind)}</strong> – ${t("eigenes Bild")}</label>
+        <strong>${t(KIND_LABEL[kind] ?? kind)}</strong> – ${t("eigenes Bild")}</label>
       <div class="meta now" data-now></div>
     </div>`).join("");
   showProposalLog().catch(() => {});
@@ -1325,7 +1400,12 @@ function synopsisHtml(m) {
   const note = wanted ? "" : `<p class="meta">${LANG === "en" ? t("Beschreibung nur auf Deutsch vorhanden.") : t("Beschreibung nur auf Englisch vorhanden.")}</p>`;
   return `<p class="synopsis" lang="${wanted ? LANG : (LANG === "en" ? "de" : "en")}">${esc(text)}</p>${note}`;
 }
-const OWN_KINDS = [["sstitle", "Titelbild"], ["ss", "Spielszene"], ["box-2D", "Verpackung"]];
+const OWN_KINDS = [["sstitle", "Titelbild"], ["ss", "Spielszene"], ["ss2", "Spielszene 2"], ["ss3", "Spielszene 3"],
+  ["ss4", "Spielszene 4"], ["box-2D", "Verpackung"]];
+const KIND_LABEL = Object.fromEntries(OWN_KINDS);
+// Weitere Szenen (ab 0.9.4): Platz n erscheint, sobald Platz n-1 belegt ist.
+const SCENES = ["ss", "ss2", "ss3", "ss4"];
+const freeScene = (media) => SCENES.find((k) => !media.some(([kind]) => kind === k));
 let ownTarget = null;
 let ownSaved = false;
 // „Eigene Fassung schreiben“: leerer Dialog, gespeichert als selbst geschrieben (teilbar).
@@ -1364,7 +1444,8 @@ function renderOwnImages(mediaList) {
   const sel = [prev, storedDeviceId()].find((id) => shooters.some((x) => x.id === id)) ?? shooters[0]?.id;
   const shotBtn = (kind) => shooters.length && kind !== "box-2D"
     ? `<button type="button" class="small" data-img="shot" title="${t("Was gerade auf dem Gerät zu sehen ist, als dieses Bild speichern (320 × 200) – nur mit Netzwerkkabel am Gerät")}">${t("Bildschirmfoto")}</button>` : "";
-  $("#own-images").innerHTML = OWN_KINDS.map(([kind, label]) => `
+  const visible = OWN_KINDS.filter(([kind]) => !/^ss\d$/.test(kind) || media[SCENES[SCENES.indexOf(kind) - 1]] || media[kind]);
+  $("#own-images").innerHTML = visible.map(([kind, label]) => `
     <div class="own-image" data-kind="${kind}">
       <div class="thumb">${media[kind] ? `<img alt="">` : `<span class="meta">${t("kein Bild")}</span>`}</div>
       <div class="meta">${t(label)}</div>
@@ -1535,9 +1616,8 @@ function openSettings() {
   $("#update-check").checked = s.update_check;
   $("#auto-title").checked = s.auto_title;
   $("#auto-title-delay").value = String(s.auto_title_delay ?? 25);
-  $("#emu-path").value = s.emulator_path ?? "";
-  $("#emu-args").value = s.emulator_args || s.default_emulator_args || "";
-  $("#emu-found").hidden = true;
+  $("#emu-list").innerHTML = "";
+  (s.emulators ?? []).forEach((e) => addEmuRow(e.path, e.args));
   $("#ss-dev").hidden = s.dev_builtin;
   $("#ss-devid").value = s.dev_id;
   $("#ss-devpassword").value = "";
@@ -1573,8 +1653,10 @@ async function saveSettings() {
       update_check: $("#update-check").checked,
       auto_title: $("#auto-title").checked,
       auto_title_delay: Number($("#auto-title-delay").value) || 25,
-      emulator_path: $("#emu-path").value.trim(),
-      emulator_args: $("#emu-args").value.trim() || scraperSettings.default_emulator_args,
+      emulators: emuRows().map((row) => ({
+        path: row.querySelector(".emu-path").value.trim(),
+        args: row.querySelector(".emu-args").value.trim(),
+      })).filter((e) => e.path),
     },
   });
   await loadScraperSettings();
@@ -1592,24 +1674,59 @@ $("#submit-src").addEventListener("change", showServerRows);
 
 $("#btn-settings").addEventListener("click", openSettings);
 
-// Emulator: übliche Orte von VICE absuchen oder das Programm selbst wählen
+// Emulatoren: eine Zeile je Programm (Programm, Aufruf, Entfernen); jeder erscheint in den Details als eigenes Ziel.
+const MAX_EMULATORS = 8;
+const emuRows = () => [...$("#emu-list").querySelectorAll(".emu-row")];
+// Gleiche Regel wie emulator::default_args in Rust: Denise bekommt nur die Datei.
+const emuDefaultArgs = (path) => /(^|[\\/])denise(\.app|\.exe)?[\\/]?$/i.test(path.trim())
+  ? "{file}" : (scraperSettings?.default_emulator_args ?? "-autostart {file}");
+
+function addEmuRow(path = "", args = "") {
+  if (emuRows().length >= MAX_EMULATORS) {
+    showError(t("Höchstens {n} Emulatoren.", { n: MAX_EMULATORS }));
+    return null;
+  }
+  const row = document.createElement("div");
+  row.className = "emu-row";
+  row.innerHTML = `<div class="emu-line">
+      <input class="emu-path" autocomplete="off" spellcheck="false" placeholder="${esc(t("z. B. …/x64sc oder …/Denise"))}" aria-label="${esc(t("Programm"))}">
+      <button type="button" class="emu-pick">${t("Auswählen …")}</button>
+      <button type="button" class="emu-del" title="${esc(t("Diesen Emulator entfernen"))}">✕</button>
+    </div>
+    <label>${t("Aufruf")} <input class="emu-args" autocomplete="off" spellcheck="false"></label>`;
+  const pathIn = row.querySelector(".emu-path"), argsIn = row.querySelector(".emu-args");
+  pathIn.value = path;
+  argsIn.value = args;
+  const syncPlaceholder = () => { argsIn.placeholder = emuDefaultArgs(pathIn.value); };
+  syncPlaceholder();
+  pathIn.addEventListener("input", syncPlaceholder);
+  row.querySelector(".emu-pick").addEventListener("click", async () => {
+    const p = await invoke("plugin:dialog|open", { options: { directory: false, multiple: false, title: t("Emulator auswählen (z. B. x64sc oder Denise)") } });
+    if (p) { pathIn.value = p; syncPlaceholder(); }
+  });
+  row.querySelector(".emu-del").addEventListener("click", () => row.remove());
+  $("#emu-list").append(row);
+  return row;
+}
+
+$("#btn-emu-add").addEventListener("click", () => addEmuRow()?.querySelector(".emu-path").focus());
+// Übliche Orte absuchen; Neues kommt als weitere Zeile dazu.
 $("#btn-emu-find").addEventListener("click", async () => {
   const found = await invoke("find_emulators").catch(() => []);
-  const sel = $("#emu-found");
   if (!found.length) {
-    sel.hidden = true;
-    showError(t("VICE nicht gefunden – bitte das Programm x64sc selbst auswählen (vice-emu.sourceforge.io)."));
+    showError(t("Kein Emulator gefunden – bitte VICE (x64sc, vice-emu.sourceforge.io) oder Denise (deniseemu.sourceforge.io) selbst auswählen."));
     return;
   }
-  if (!$("#emu-path").value.trim()) $("#emu-path").value = found[0];
-  sel.innerHTML = found.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join("");
-  sel.value = $("#emu-path").value;
-  sel.hidden = found.length < 2;
-});
-$("#emu-found").addEventListener("change", (ev) => { $("#emu-path").value = ev.target.value; });
-$("#btn-emu-pick").addEventListener("click", async () => {
-  const path = await invoke("plugin:dialog|open", { options: { directory: false, multiple: false, title: t("Emulator auswählen (z. B. x64sc)") } });
-  if (path) $("#emu-path").value = path;
+  const have = new Set(emuRows().map((r) => r.querySelector(".emu-path").value.trim()));
+  const fresh = found.filter((f) => !have.has(f));
+  const total = fresh.length;
+  // Leere Zeilen zuerst füllen
+  for (const row of emuRows()) {
+    const inp = row.querySelector(".emu-path");
+    if (!inp.value.trim() && fresh.length) { inp.value = fresh.shift(); inp.dispatchEvent(new Event("input")); }
+  }
+  for (const f of [...fresh]) { if (!addEmuRow(f)) break; fresh.shift(); }
+  setStatus(t("{n} Emulator(en) gefunden, {m} neu eingetragen – zum Übernehmen speichern.", { n: found.length, m: total - fresh.length }));
 });
 
 // ---------------------------------------------------------------- Anleitung und Über
@@ -1815,13 +1932,13 @@ async function loadDevices() {
           <div class="meta menu-info">${esc(t("Startordner: {dir}", { dir: d.upload_dir }))}</div>
           <button data-act="folder">${t("Ordner als Quelle")}</button>
           <button data-act="edit">${t("Bearbeiten")}</button>
-          <button data-act="saves" title="${t("Disketten, die sich im Startordner seit dem Hinkopieren geändert haben (Spielstände), auf den Rechner holen")}">${t("Spielstände zurückholen …")}</button>
+          ${isTr(d) ? "" : `<button data-act="saves" title="${t("Disketten, die sich im Startordner seit dem Hinkopieren geändert haben (Spielstände), auf den Rechner holen")}">${t("Spielstände zurückholen …")}</button>`}
           <button data-act="clean" title="${t("Dateien löschen, die Breadbin zum Starten in den Startordner kopiert hat")}">${t("Startordner leeren")}</button>
           <button data-act="remove" class="danger">${t("Entfernen")}</button>
         </div>
       </details>
     </li>`).join("")
-    : `<li class="empty">${t("Noch kein Gerät. Mit „+ Gerät“ einen Ultimate im Netzwerk hinzufügen, um Spiele dort zu starten.")}</li>`;
+    : `<li class="empty">${t("Noch kein Gerät. Mit „+ Gerät“ einen Ultimate, BMC64 oder TeensyROM im Netzwerk hinzufügen, um Spiele dort zu starten.")}</li>`;
   devices.forEach((d) => refreshDeviceStatus(d.id));
 }
 
@@ -1871,13 +1988,14 @@ function fillDrives(listSel, drives) {
 }
 
 function openDeviceDialog(dev) {
-  editingDevice = dev ? { ...dev } : { id: 0, name: "", host: "", product: "", upload_dir: "", wifi_mac: "" };
+  editingDevice = dev ? { ...dev } : { id: 0, name: "", host: "", product: "", upload_dir: "", wifi_mac: "", kind: "ultimate" };
   $("#dev-found").innerHTML = "";
   $("#dev-title").textContent = dev ? t("Gerät bearbeiten") : t("Gerät hinzufügen");
   $("#dev-host").value = editingDevice.host;
   $("#dev-password").value = "";
   $("#dev-name").value = editingDevice.name;
   $("#dev-upload").value = editingDevice.upload_dir;
+  $("#dev-kind").value = editingDevice.kind || "ultimate";
   setDevResult("", "");
   $("#device-dialog").showModal();
 }
@@ -1903,6 +2021,8 @@ $("#dev-discover").addEventListener("click", async () => {
       $("#dev-host").value = f.host;
       if (!$("#dev-name").value) $("#dev-name").value = f.product;
       editingDevice.wifi_mac = f.wifi_mac;
+      editingDevice.kind = f.kind ?? "ultimate";
+      $("#dev-kind").value = editingDevice.kind;
       $("#dev-probe").click();
     }));
   } catch (e) {
@@ -1916,25 +2036,32 @@ $("#dev-probe").addEventListener("click", async () => {
   try {
     const info = await invoke("probe_device", { host, password: $("#dev-password").value || null });
     editingDevice.product = info.product;
+    editingDevice.kind = info.kind ?? "ultimate";
+    $("#dev-kind").value = editingDevice.kind;
     if (info.wifi_mac) editingDevice.wifi_mac = info.wifi_mac;
     if (!$("#dev-name").value) $("#dev-name").value = info.product;
     fillDrives("#dev-drives", info.drives);
     if (!$("#dev-upload").value) {
-      const usb = info.drives.find((d) => d.toUpperCase().startsWith("USB")) ?? info.drives.find((d) => d === "SD") ?? "USB0";
+      // TeensyROM: SD zuerst – große Module (über 850 KB) startet er nur von dort.
+      const usb = isTr(info) ? (info.drives.find((d) => d === "SD") ?? info.drives[0] ?? "SD")
+        : info.drives.find((d) => d.toUpperCase().startsWith("USB")) ?? info.drives.find((d) => d === "SD") ?? "USB0";
       $("#dev-upload").value = `/${usb}/Breadbin`;
     }
     setDevResult(t("Gefunden: {product}{fw}. Laufwerke: {drives}.", {
       product: info.product, fw: info.firmware ? t(", Firmware {fw}", { fw: info.firmware }) : "",
       drives: info.drives.join(", ") || t("keine"),
-    }), "ok");
+    }) + (isTr(info) ? " " + t("TeensyROM-Unterstützung ist ungetestet.") : ""), "ok");
   } catch (e) {
     setDevResult(String(e), "bad");
   }
 });
 $("#dev-save").addEventListener("click", async () => {
   try {
+    editingDevice.kind = $("#dev-kind").value || "ultimate";
+    const sd = isBmc(editingDevice) || isTr(editingDevice);
     const device = { ...editingDevice, host: $("#dev-host").value.trim(), name: $("#dev-name").value.trim(),
-      upload_dir: $("#dev-upload").value.trim() || "/USB0/Breadbin", product: editingDevice.product || "Ultimate" };
+      upload_dir: $("#dev-upload").value.trim() || (sd ? "/SD/Breadbin" : "/USB0/Breadbin"),
+      product: editingDevice.product || (isBmc(editingDevice) ? "BMC64" : isTr(editingDevice) ? "TeensyROM" : "Ultimate") };
     await invoke("save_device", { device, password: $("#dev-password").value || null });
     $("#device-dialog").close();
     await loadDevices();
@@ -2069,47 +2196,78 @@ function disksHtml(variants) {
       </li>`).join("")}</ol>`).join("")}`;
 }
 
-// Bildschirmfotos über den Videostrom können Ultimate 64 und C64 Ultimate, nicht das 1541 Ultimate II+.
-const canShoot = (d) => !!d && !/1541|II\+/i.test(d.product || "");
+// Bildschirmfotos über den Videostrom können Ultimate 64 und C64 Ultimate, nicht das 1541 Ultimate II+,
+// BMC64 und TeensyROM.
+const isBmc = (d) => d?.kind === "bmc64";
+const isTr = (d) => d?.kind === "teensyrom";
+// Steck-Ultimates melden „Ultimate II“, „Ultimate II+“, „Ultimate II+L“; die Ultimate 64 „Ultimate 64(-II)“.
+const isCartUltimate = (d) => { const p = (d?.product || "").replace(/-/g, " "); return /1541/i.test(p) || (/ultimate ii/i.test(p) && !/64/.test(p)); };
+const canShoot = (d) => !!d && !isBmc(d) && !isTr(d) && !isCartUltimate(d);
 
-// Emulator auf dem Rechner (Einstellungen) – erscheint als eigener Eintrag in der Geräteauswahl.
-const EMU = "emu";
-const hasEmu = () => !!scraperSettings?.emulator_path;
-const emuName = () => (scraperSettings?.emulator_path ?? "").split(/[\\/]/).filter(Boolean).pop()?.replace(/\.(app|exe)$/i, "") ?? "";
+// Emulatoren auf dem Rechner (Einstellungen) – jeder erscheint als eigener Eintrag in der Geräteauswahl
+// („emu:0“, „emu:1“ …; ältere Fassungen merkten sich nur „emu“ = der erste).
+const emulators = () => scraperSettings?.emulators ?? [];
+const hasEmu = () => emulators().length > 0;
+const isEmuTarget = (v) => typeof v === "string" && /^emu(:\d+)?$/.test(v);
+const emuIndex = (v) => Number(String(v).split(":")[1] ?? 0);
+const emuAt = (v) => emulators()[emuIndex(v)];
+const emuLabel = (e, i) => {
+  const same = emulators().filter((x) => x.name === e.name).length > 1;
+  return t("{name} (Emulator)", { name: same ? `${e.name} ${i + 1}` : e.name });
+};
 
 function storedTarget() {
   let v = null;
   try { v = localStorage.getItem("launchDevice"); } catch { /* egal */ }
-  return v === EMU && hasEmu() ? EMU : storedDeviceId();
+  if (isEmuTarget(v) && emuAt(v)) return `emu:${emuIndex(v)}`;
+  return storedDeviceId();
 }
 
 // Knöpfe, die nur mit einem Gerät gehen, beim Wechsel auf den Emulator ausblenden (und umgekehrt).
+// BMC64 kann nicht einlegen (nur mit Neustart) und keine Bildschirmfotos; TAP startet nur BMC64.
+// TeensyROM lädt nur einzelne Dateien: kein Einlegen, keine Spielstände, kein Bildschirmfoto.
 function syncLaunchTarget(pane) {
-  const emu = pane.querySelector("#launch-device")?.value === EMU;
+  const value = pane.querySelector("#launch-device")?.value;
+  const emu = isEmuTarget(value);
+  const dev = devices.find((d) => String(d.id) === value);
   pane.querySelectorAll(".dev-only").forEach((el) => { el.hidden = emu; });
   pane.querySelectorAll(".emu-only").forEach((el) => { el.hidden = !emu; });
+  pane.querySelectorAll("[data-insert], #btn-insert").forEach((el) => { el.hidden = emu || isBmc(dev) || isTr(dev); });
+  pane.querySelectorAll("#btn-saves").forEach((el) => { el.hidden = emu || isTr(dev); });
+  const shot = pane.querySelector("#btn-shot");
+  if (shot) shot.hidden = emu || !canShoot(dev);
+  pane.querySelectorAll(".ult-only").forEach((el) => { el.hidden = emu || isBmc(dev) || isTr(dev); });
+  pane.querySelectorAll(".tr-only").forEach((el) => { el.hidden = emu || !isTr(dev); });
+  pane.querySelectorAll(".bmc-only").forEach((el) => { el.hidden = emu || !isBmc(dev); });
 }
 
 function launchHtml(r) {
   const emu = hasEmu();
   if (!devices.length && !emu) return "";
-  const sel = storedTarget();
+  const stored = storedTarget();
+  const sel = !devices.length && !isEmuTarget(stored) ? "emu:0" : stored;
   const disk = DISK_FORMATS.includes(r.format);
   const tap = r.format === "TAP";
   const shot = devices.some(canShoot)
     ? `<button class="dev-only" id="btn-shot" title="${t("Bild vom Bildschirm des Geräts als eigenes Titelbild oder eigene Spielszene speichern – nur mit Netzwerkkabel am Gerät")}">${t("Bildschirmfoto")}</button>` : "";
   return `<div class="launch">
     <select id="launch-device">${devices.map((d) =>
-      `<option value="${d.id}" ${d.id === sel ? "selected" : ""}>${esc(d.name)}</option>`).join("")}${emu
-      ? `<option value="${EMU}" ${sel === EMU || !devices.length ? "selected" : ""}>${esc(t("{name} (Emulator)", { name: emuName() }))}</option>` : ""}</select>
-    ${tap && !emu ? "" : `<button class="primary" id="btn-launch">${t("Starten")}</button>`}
+      `<option value="${d.id}" ${d.id === sel ? "selected" : ""}>${esc(d.name)}</option>`).join("")}${emulators().map((e, i) =>
+      `<option value="emu:${i}" ${sel === `emu:${i}` ? "selected" : ""}>${esc(emuLabel(e, i))}</option>`).join("")}</select>
+    ${tap && !emu && !devices.some(isBmc) ? "" : `<button class="primary" id="btn-launch">${t("Starten")}</button>`}
     ${disk ? `<button class="dev-only" id="btn-insert" title="${t("In Laufwerk A einlegen, ohne Neustart – für den Diskwechsel im laufenden Spiel")}">${t("Einlegen")}</button>` : ""}
     ${disk ? `<button class="dev-only" id="btn-saves" title="${t("Hat das Spiel auf seine Diskette im Startordner gespeichert, diese Diskette mit Spielstand auf den Rechner holen")}">${t("Spielstand holen …")}</button>` : ""}
     ${shot}
-    <span class="meta hint dev-only">${tap ? t("Bandabbilder (TAP) lassen sich noch nicht starten.")
+    <span class="meta hint ult-only">${tap ? t("Bandabbilder (TAP) startet nur BMC64; auf dem Ultimate geht das noch nicht.")
       : disk ? t("Starten beendet, was gerade auf dem C64 läuft, und startet dieses Spiel; Einlegen wechselt nur die Diskette in Laufwerk A.")
       : t("Starten beendet, was gerade auf dem C64 läuft, und startet dieses Spiel.")}</span>
+    <span class="meta hint bmc-only">${t("Starten beendet, was gerade in BMC64 läuft, und startet dieses Spiel (Autostart). Diskwechsel nur im BMC64-Menü.")}</span>
+    <span class="meta hint tr-only">${tap || r.format === "G64" ? t("TeensyROM kann {format} nicht starten.", { format: r.format })
+      : disk ? t("TeensyROM (ungetestet) startet nur Disketten mit einer einzigen Programmdatei; mehrteilige Disk-Spiele gehen nicht.")
+      : t("Starten setzt den C64 zurück und startet dieses Spiel über den TeensyROM (ungetestet).")}</span>
     ${emu ? `<span class="meta hint emu-only">${t("Startet das Spiel in einem neuen Emulator-Fenster auf diesem Rechner.")}</span>` : ""}
+    ${emu ? `<label class="emu-only emu-game-args" title="${t("Zusätzliche Optionen nur für dieses Spiel (alle Fassungen) und diese Art Emulator (VICE, Denise …). Sie stehen vor den allgemeinen Optionen aus den Einstellungen.")}">${t("Optionen für dieses Spiel")}
+      <input id="emu-game-args" autocomplete="off" spellcheck="false"></label>` : ""}
   </div>`;
 }
 
@@ -2127,14 +2285,16 @@ async function captureScreen(pane, r, btn) {
     title: t("Bildschirmfoto"), kind: "info",
     buttons: { YesNoCancelCustom: [title, scene, t("Abbrechen")] },
   });
-  const kind = answer === "Yes" || answer === title || answer?.Custom === title ? "sstitle"
+  let kind = answer === "Yes" || answer === title || answer?.Custom === title ? "sstitle"
     : answer === "No" || answer === scene || answer?.Custom === scene ? "ss" : null;
   if (!kind) return;
+  // Spielszene: nächster freier Platz (Szene 1–4); sind alle belegt, wird Szene 4 ersetzt.
+  if (kind === "ss") kind = freeScene(lastDetailsMedia) ?? "ss4";
   btn.disabled = true;
   setStatus(t("Nehme das Bild von {name} auf …", { name: dev.name }));
   try {
     await invoke("capture_screen", { deviceId, sha1s: [r.sha1], kind, crop: true });
-    setStatus(t("Bildschirmfoto gespeichert."));
+    setStatus(t("Bildschirmfoto gespeichert als {kind}.", { kind: t(KIND_LABEL[kind] ?? kind) }));
     await showDetails(r.sha1);
   } catch (e) {
     showError(e);
@@ -2144,10 +2304,29 @@ async function captureScreen(pane, r, btn) {
 }
 
 function wireLaunch(pane, r) {
+  // Optionen je Spiel gelten je Emulatorfamilie (VICE und Denise kennen verschiedene Optionen).
+  const gameArgs = pane.querySelector("#emu-game-args");
   const target = pane.querySelector("#launch-device");
+  const sha1s = [...new Set([r.sha1, ...currentGroup])];
+  const family = () => emuAt(target?.value)?.family ?? "";
+  const loadGameArgs = () => {
+    if (!gameArgs || !isEmuTarget(target?.value)) return;
+    const f = family();
+    gameArgs.placeholder = { vice: t("z. B. -ntsc -reu"), denise: t("z. B. -vic-6567R8 -reu 512") }[f] ?? "";
+    gameArgs.value = "";
+    invoke("emu_options", { sha1s, family: f }).then((v) => { if (family() === f) gameArgs.value = v; })
+      .catch(() => { /* nur ein Zusatz */ });
+  };
+  if (gameArgs) {
+    gameArgs.addEventListener("change", () => invoke("save_emu_options", { sha1s, family: family(), args: gameArgs.value })
+      .then(() => setStatus(gameArgs.value.trim()
+        ? t("Emulator-Optionen für dieses Spiel gespeichert.") : t("Emulator-Optionen für dieses Spiel entfernt.")))
+      .catch(showError));
+  }
   if (target) {
     syncLaunchTarget(pane);
-    target.addEventListener("change", () => syncLaunchTarget(pane));
+    loadGameArgs();
+    target.addEventListener("change", () => { syncLaunchTarget(pane); loadGameArgs(); });
   }
   pane.querySelector("#btn-shot")?.addEventListener("click", (ev) => captureScreen(pane, r, ev.currentTarget).catch(showError));
   pane.querySelector("#btn-saves")?.addEventListener("click", () => {
@@ -2194,12 +2373,12 @@ async function autoTitle(dev, sha1) {
 }
 
 // Im Emulator starten; bei mehreren Disketten bekommt er alle Seiten dieser Reihe für den Wechsel.
-async function launchEmu(sha1, title, btn) {
+async function launchEmu(sha1, title, btn, index = 0) {
   const set = diskSets(lastVariants).find((l) => l.some((v) => v.sha1 === sha1));
   btn.disabled = true;
   setStatus(t("Starte „{title}“ im Emulator …", { title }));
   try {
-    const res = await invoke("launch_emulator", { sha1, disks: set ? set.map((v) => v.sha1) : null });
+    const res = await invoke("launch_emulator", { sha1, disks: set ? set.map((v) => v.sha1) : null, index });
     setStatus(res.message);
     if ($("#view").value === "recent") runSearch().catch(showError);
   } catch (e) {
@@ -2212,9 +2391,9 @@ async function launchEmu(sha1, title, btn) {
 async function launchOn(pane, sha1, title, insertOnly, btn) {
   const target = pane.querySelector("#launch-device").value;
   try { localStorage.setItem("launchDevice", target); } catch { /* egal */ }
-  if (target === EMU) {
-    if (insertOnly) setStatus(t("Im Emulator die nächste Diskette über „Fliplist“ im VICE-Menü einlegen (meist Alt+N)."));
-    else await launchEmu(sha1, title, btn);
+  if (isEmuTarget(target)) {
+    if (insertOnly) setStatus(t("Im Emulator die nächste Diskette einlegen: in VICE über „Fliplist“ (meist Alt+N), sonst über das Laufwerksmenü des Emulators."));
+    else await launchEmu(sha1, title, btn, emuIndex(target));
     return;
   }
   const deviceId = Number(target);

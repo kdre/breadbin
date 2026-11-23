@@ -9,7 +9,7 @@
 //! Vorrang: eigene Angaben, dann Gemeinschaft, dann ScreenScraper (Einstellung `preferred_source`;
 //! mit `screenscraper` geht ScreenScraper der Gemeinschaft vor).
 
-use crate::metadata::{self, MEDIA_KINDS, PROVIDER_OWN};
+use crate::metadata::{self, BASE_KINDS, EXTRA_SCENES, PROVIDER_OWN};
 use crate::tr;
 use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -105,6 +105,10 @@ pub struct SharedGame {
     /// Bildart (`sstitle`, `ss`, `box-2D`) → Pfad im Archiv.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub images: BTreeMap<String, String>,
+    /// Weitere Spielszenen (`ss2` … `ss4`) → Pfad im Archiv. Eigenes Feld, damit Fassungen vor 0.9.4 es
+    /// überlesen, statt das Spiel wegen einer unbekannten Bildart abzulehnen.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub more_images: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize)]
@@ -316,7 +320,11 @@ fn write_all(
             if written.insert(path.clone()) {
                 sink.put(&path, &data, false)?;
             }
-            g.images.insert(kind, path);
+            if EXTRA_SCENES.contains(&kind.as_str()) {
+                g.more_images.insert(kind, path);
+            } else {
+                g.images.insert(kind, path);
+            }
         }
         let mut json = serde_json::to_vec_pretty(&g)?;
         json.push(b'\n');
@@ -870,9 +878,18 @@ fn check_game(g: &SharedGame) -> Result<()> {
         g.screenscraper_id.bytes().all(|b| b.is_ascii_digit()) && g.screenscraper_id.len() <= 12,
         tr!("ungültige Spielnummer", "invalid game number")
     );
-    for (kind, path) in &g.images {
+    let kinds = g
+        .images
+        .iter()
+        .map(|(k, p)| (k, p, BASE_KINDS.contains(&k.as_str())))
+        .chain(
+            g.more_images
+                .iter()
+                .map(|(k, p)| (k, p, EXTRA_SCENES.contains(&k.as_str()))),
+        );
+    for (kind, path, known) in kinds {
         ensure!(
-            MEDIA_KINDS.contains(&kind.as_str()),
+            known,
             tr!("unbekannte Bildart {kind}", "unknown picture type {kind}")
         );
         ensure!(
@@ -961,7 +978,7 @@ pub fn import(conn: &mut Connection, media_dir: &Path, path: &Path) -> Result<Im
                         .and_then(|(_, _, id)| id.clone())
                 });
             let mut images = Vec::new();
-            for (kind, p) in &g.images {
+            for (kind, p) in g.images.iter().chain(&g.more_images) {
                 let ext = check_image_path(p).unwrap_or_default();
                 let data = src.read(p, MAX_IMAGE)?;
                 let fits = matches!(
@@ -1128,6 +1145,62 @@ mod tests {
         assert_eq!(meta2.provider, PROVIDER_SHARED);
         assert_eq!(meta2.synopsis.as_deref(), Some("Deutsch"));
         assert_eq!(meta2.synopsis_en.as_deref(), Some("English"));
+    }
+
+    #[test]
+    fn weitere_szenen_teilen() {
+        let (dir, conn) = library(&["eigen.prg"]);
+        let media = dir.path().join("media");
+        let own = sha1_of(&conn, "eigen");
+        let m = metadata::OwnMeta {
+            title: "Space Gun".into(),
+            ..Default::default()
+        };
+        metadata::save_own(&conn, std::slice::from_ref(&own), &m, false).unwrap();
+        for kind in ["ss", "ss2", "ss3"] {
+            metadata::set_own_image(
+                &conn,
+                std::slice::from_ref(&own),
+                kind,
+                Some((&png(), "png")),
+                &media,
+            )
+            .unwrap();
+        }
+        let out = dir.path().join("teilen.zip");
+        assert_eq!(export(&conn, &media, &out, "Breadbin test").unwrap(), 1);
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&out).unwrap()).unwrap();
+        let raw = read_entry(&mut zip, &game_path(&own), MAX_JSON).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(
+            v["images"].as_object().unwrap().keys().collect::<Vec<_>>(),
+            ["ss"],
+            "unter images nur Bildarten, die auch ältere Fassungen kennen"
+        );
+        assert_eq!(
+            v["more_images"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .collect::<Vec<_>>(),
+            ["ss2", "ss3"]
+        );
+
+        let (dir2, mut conn2) = library(&["eigen.prg"]);
+        let r = import(&mut conn2, &dir2.path().join("media"), &out).unwrap();
+        assert_eq!((r.imported, r.errors.len()), (1, 0));
+        let kinds: Vec<String> = db::details(&conn2, &own)
+            .unwrap()
+            .media
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(kinds, ["ss", "ss2", "ss3"], "Reihenfolge Szene 1, 2, 3");
+
+        // Unbekannte Bildart im neuen Feld wird wie bisher abgelehnt.
+        let mut g: SharedGame = serde_json::from_slice(&raw).unwrap();
+        g.more_images.insert("ss9".into(), g.images["ss"].clone());
+        assert!(check_game(&g).is_err());
     }
 
     #[test]

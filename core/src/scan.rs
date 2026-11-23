@@ -23,13 +23,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
 
-use crate::ftp::{self, Ftp};
+use crate::ftp;
+use crate::remote::{self, Remote};
 use crate::{db, formats, names};
 
 /// Größte einzelne C64-Datei, die eingelesen wird (größte übliche: EasyFlash-CRT, 1 MB).
 const MAX_FILE: u64 = 16 * 1024 * 1024;
 /// Größtes ZIP-Archiv, das geöffnet wird (vom Gerät wird es ganz in den Speicher geladen).
 const MAX_ZIP: u64 = 512 * 1024 * 1024;
+/// Höchstens so viele Pfade neuer bzw. fehlender Dateien werden für die Meldung gesammelt.
+pub const MAX_LISTED: usize = 500;
 /// Nach so vielen Dateien wird zwischengespeichert.
 const COMMIT_EVERY: u64 = 200;
 
@@ -41,8 +44,19 @@ pub struct Progress {
     pub unchanged: u64,
     /// Per Schnellscan aus anderen Quellen übernommene Dateien (nicht gelesen).
     pub quick: u64,
-    /// Gelöschte Einträge (erst am Ende bekannt).
+    /// Dateien, die seit dem letzten Scan fehlen und aus der Bibliothek entfernt wurden (erst am Ende
+    /// bekannt; ein ZIP zählt als eine Datei).
     pub removed: u64,
+    /// Dateien, die es beim letzten Scan noch nicht gab.
+    pub added: u64,
+    /// Dateien, die es schon gab, die sich aber geändert haben (neu gelesen).
+    pub changed: u64,
+    /// Pfade der neuen Dateien (höchstens `MAX_LISTED`).
+    pub added_files: Vec<String>,
+    /// Pfade der fehlenden Dateien (höchstens `MAX_LISTED`).
+    pub removed_files: Vec<String>,
+    /// Erster Scan dieser Quelle – dann ist alles neu, eine Liste wäre nur lang.
+    pub first_scan: bool,
     pub errors: Vec<String>,
     pub current: String,
     pub cancelled: bool,
@@ -272,11 +286,43 @@ fn scan_item(
         progress.unchanged += 1;
         return Ok(0);
     }
+    let existed: bool = conn
+        .prepare_cached("SELECT EXISTS(SELECT 1 FROM files WHERE source_id = ? AND path = ?)")?
+        .query_row(params![source_id, rel], |r| r.get(0))?;
     conn.execute(
         "DELETE FROM files WHERE source_id = ? AND path = ?",
         params![source_id, rel],
     )?;
+    let n = read_item(
+        conn, source_id, rel, fsize, fmtime, scan_id, progress, quick, open, format, stem, is_zip,
+    )?;
+    if existed {
+        progress.changed += 1;
+    } else {
+        progress.added += 1;
+        if progress.added_files.len() < MAX_LISTED {
+            progress.added_files.push(rel.to_string());
+        }
+    }
+    Ok(n)
+}
 
+/// Liest eine neue oder geänderte Datei ein (die alten Einträge sind schon gelöscht).
+#[allow(clippy::too_many_arguments)]
+fn read_item(
+    conn: &Connection,
+    source_id: i64,
+    rel: &str,
+    fsize: i64,
+    fmtime: i64,
+    scan_id: i64,
+    progress: &mut Progress,
+    quick: Option<&QuickMap>,
+    open: &mut dyn FnMut(u64) -> Result<Box<dyn ReadSeek>>,
+    format: &str,
+    stem: &str,
+    is_zip: bool,
+) -> Result<u64> {
     if let Some(Some(known)) = quick.and_then(|m| m.get(&(base_name(rel), fsize))) {
         let mut st = conn.prepare_cached(
             "INSERT INTO files(source_id, path, member, fsize, fmtime, sha1, title, year, publisher, seen, quick)
@@ -369,13 +415,17 @@ impl<'a> Run<'a> {
             None
         };
         conn.execute_batch("BEGIN")?;
+        let first_scan = db::get_source(conn, source_id)?.last_scan.is_none();
         Ok(Run {
             conn,
             source_id,
             scan_id: now_ms().max(last + 1),
             since_commit: 0,
             quick,
-            p: Progress::default(),
+            p: Progress {
+                first_scan,
+                ..Progress::default()
+            },
         })
     }
 
@@ -413,10 +463,19 @@ impl<'a> Run<'a> {
 
     fn finish(mut self, report: &mut dyn FnMut(&Progress)) -> Result<Progress> {
         if !self.p.cancelled {
-            self.p.removed = self.conn.execute(
+            let mut st = self.conn.prepare(
+                "SELECT DISTINCT path FROM files WHERE source_id = ? AND seen <> ? ORDER BY path",
+            )?;
+            let gone: Vec<String> = st
+                .query_map(params![self.source_id, self.scan_id], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            drop(st);
+            self.p.removed = gone.len() as u64;
+            self.p.removed_files = gone.into_iter().take(MAX_LISTED).collect();
+            self.conn.execute(
                 "DELETE FROM files WHERE source_id = ? AND seen <> ?",
                 params![self.source_id, self.scan_id],
-            )? as u64;
+            )?;
             db::remove_orphans(self.conn)?;
             self.conn.execute(
                 "UPDATE sources SET last_scan = ? WHERE id = ?",
@@ -509,7 +568,8 @@ pub fn scan_local(
     run.finish(report)
 }
 
-/// Durchsucht einen Ordner auf einem Ultimate-Gerät per FTP (`ftp://host/USB0/Spiele`).
+/// Durchsucht einen Ordner auf einem Gerät: Ultimate per FTP (`ftp://host/USB0/Spiele`), BMC64 über
+/// seine Weboberfläche (`bmc64://host/SD/Spiele`), TeensyROM über TCP 2112 (`teensyrom://host/SD/Spiele`).
 ///
 /// Unverändert gilt eine Datei bei gleicher Größe und gleicher MLSD-Zeit; kann das Gerät
 /// kein MLSD, nur bei gleicher Größe.
@@ -528,7 +588,8 @@ pub fn scan_ultimate(
             source.location
         )
     })?;
-    let mut ftp = Ftp::connect(host, password)?;
+    let kind = remote::location_kind(&source.location);
+    let mut ftp = Remote::connect(kind, host, password)?;
     // Ein fehlender Ordner (z. B. Stick abgezogen) liefert beim Ultimate eine leere Liste –
     // das darf nicht als „alles gelöscht“ gelten.
     if !ftp.is_dir(root)? {
@@ -552,7 +613,8 @@ pub fn scan_ultimate(
             Err(e) => {
                 // Verbindung abgerissen: einmal neu verbinden, sonst den Lauf abbrechen,
                 // damit nichts als gelöscht gilt.
-                ftp = Ftp::connect(host, password).with_context(|| format!("{abs_dir}: {e:#}"))?;
+                ftp = Remote::connect(kind, host, password)
+                    .with_context(|| format!("{abs_dir}: {e:#}"))?;
                 ftp.list(&abs_dir)?
             }
         };
@@ -750,11 +812,22 @@ mod tests {
         std::fs::remove_file(dir.path().join("b.prg")).unwrap();
         let p = scan(&conn, id);
         assert_eq!((p.read, p.unchanged, p.removed), (0, 1, 1));
+        assert_eq!(p.removed_files, ["b.prg"]);
+        assert_eq!((p.added, p.changed), (0, 0));
+        assert!(!p.first_scan);
+
         assert_eq!(
             db::stats(&conn).unwrap().contents,
             1,
             "verwaister Inhalt gelöscht"
         );
+
+        // Neue und geänderte Dateien werden getrennt gezählt.
+        write(dir.path(), "c.prg", &[1, 8, 2]);
+        write(dir.path(), "a.prg", &[1, 8, 9, 9]);
+        let p = scan(&conn, id);
+        assert_eq!((p.added, p.changed, p.removed), (1, 1, 0));
+        assert_eq!(p.added_files, ["c.prg"]);
     }
 
     #[test]

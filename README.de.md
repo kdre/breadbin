@@ -7,7 +7,7 @@ Ein Projekt von [8bitcavern.de](https://8bitcavern.de). Kontakt: breadbin@8bitca
 Breadbin ist eine kostenlose Desktop-App für Windows, macOS und Linux, die den Überblick über deine
 Commodore-64-Spiele behält: Sie erfasst lokale Ordner, Netzlaufwerke und die USB-Sticks von
 Ultimate-Geräten, zeigt, was wo liegt, ergänzt Beschreibungen und Bilder und startet Spiele direkt auf
-einem Ultimate 64, einem C64 Ultimate oder einem 1541 Ultimate II+.
+einem Ultimate 64, einem C64 Ultimate, einem 1541 Ultimate II+ oder auf BMC64 (Raspberry Pi).
 
 Die Oberfläche gibt es auf Deutsch und Englisch (nach Systemsprache, umschaltbar in den Einstellungen),
 eine Anleitung ist eingebaut (Knopf „?“ oder F1).
@@ -50,6 +50,17 @@ eine Anleitung ist eingebaut (Knopf „?“ oder F1).
 - Markierte Spiele in einen Ordner auf dem Gerät kopieren – dann findet man sie auch ohne Rechner im Menü
 - Gerätestatus, Einschalten per Wake-on-WiFi, Ausschalten, Suche im Netz, Ordnerauswahl auf dem Gerät
 
+**BMC64 (Raspberry Pi)**
+- Spiele über die Weboberfläche von BMC64 hochladen und starten (Web UI, ab BMC64 5.5.1) – alle Formate einschließlich
+  T64 und TAP; Ordner auf SD-Karte oder USB-Stick des Pi scannen, Spiele kopieren, Spielstände holen, PIN möglich
+- Mit BMC64 nicht möglich: Diskwechsel ohne Neustart, Bildschirmfotos, Ein-/Ausschalten
+
+**TeensyROM (ungetestet)**
+- Spiele über das TCP-Fernsteuerprotokoll des TeensyROM hochladen und starten (Port 2112, „Enable TCP Listener“):
+  PRG, P00, T64, CRT und Disketten mit einer Programmdatei; Ordner auf SD-Karte oder USB-Stick scannen, Spiele kopieren
+- Ohne echtes Gerät gebaut – Rückmeldungen von Besitzern willkommen. Nicht möglich: mehrteilige Disk-Spiele, G64, TAP,
+  Diskwechsel, Spielstände, Bildschirmfotos, Netzsuche
+
 **Emulator**
 - Spiele auch ohne Ultimate in einem Emulator auf dem Rechner starten, etwa VICE (`x64sc`) – alle Formate
   einschließlich TAP, auch aus ZIP-Archiven; Spielstände bleiben in der Kopie erhalten, Diskettenreihen bekommen
@@ -82,7 +93,9 @@ ersten Start:
   D81, G64 und CRT, Diskwechsel, Bildschirmfotos, Scan des USB-Sticks
 - Ultimate 64 Elite I (Firmware 3.15a): Start von PRG, D64, D71, D81, G64 und CRT
 - macOS, Windows und Linux (AppImage unter Fedora)
-- Noch nicht getestet: 1541 Ultimate II+. Bandabbilder (TAP) werden erfasst, lassen sich aber noch nicht starten.
+- BMC64 5.5.2 auf einem Raspberry Pi 3B+ (Ethernet): Netzsuche, Scan eines Ordners auf dem Pi, Hochladen und Starten
+  von PRG, D64, CRT und TAP, Spielstände, Kopieren
+- Noch nicht getestet: 1541 Ultimate II+ und TeensyROM (nur nach der Protokoll-Doku gebaut). Bandabbilder (TAP) lassen sich auf dem Ultimate nicht starten (auf BMC64 und im Emulator schon).
 
 ## Lizenz
 

@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS metadata(
 );
 CREATE TABLE IF NOT EXISTS media(
     sha1 TEXT NOT NULL,
-    kind TEXT NOT NULL,                -- 'ss', 'sstitle', 'box-2D'
+    kind TEXT NOT NULL,                -- 'ss', 'sstitle', 'box-2D', weitere Szenen 'ss2'…'ss4'
     file TEXT NOT NULL,                -- Dateiname im Bilderordner der App
     PRIMARY KEY(sha1, kind)
 );
@@ -87,6 +87,14 @@ CREATE TABLE IF NOT EXISTS list_items(
     PRIMARY KEY(list_id, sha1)
 );
 -- Eigene Bewertung (0 = keine, 1–5), „durchgespielt“ und Notiz je Fassung.
+-- Zusätzliche Emulator-Optionen je Spiel (für alle Fassungen gespeichert), z. B. „-ntsc -reu“,
+-- getrennt nach Emulatorfamilie („vice“, „denise“ …), weil jeder Emulator andere Optionen kennt.
+CREATE TABLE IF NOT EXISTS emu_game_options(
+    sha1    TEXT NOT NULL,
+    family  TEXT NOT NULL,
+    args    TEXT NOT NULL,
+    PRIMARY KEY(sha1, family)
+);
 CREATE TABLE IF NOT EXISTS notes(
     sha1    TEXT PRIMARY KEY,
     rating  INTEGER NOT NULL DEFAULT 0,
@@ -122,7 +130,8 @@ CREATE TABLE IF NOT EXISTS devices(
     host       TEXT NOT NULL UNIQUE,
     product    TEXT NOT NULL,
     upload_dir TEXT NOT NULL,        -- Ordner für Dateien, die zum Starten hinkopiert werden
-    wifi_mac   TEXT NOT NULL DEFAULT '' -- zum Einschalten per Wake-on-WiFi
+    wifi_mac   TEXT NOT NULL DEFAULT '', -- zum Einschalten per Wake-on-WiFi
+    kind       TEXT NOT NULL DEFAULT 'ultimate' -- Geräteart: ultimate | bmc64
 );
 ";
 
@@ -164,6 +173,9 @@ fn migrate(conn: &Connection) -> Result<()> {
     if !has_column("devices", "wifi_mac")? {
         conn.execute_batch("ALTER TABLE devices ADD COLUMN wifi_mac TEXT NOT NULL DEFAULT ''")?;
     }
+    if !has_column("devices", "kind")? {
+        conn.execute_batch("ALTER TABLE devices ADD COLUMN kind TEXT NOT NULL DEFAULT 'ultimate'")?;
+    }
     if !has_column("sources", "quick")? {
         conn.execute_batch("ALTER TABLE sources ADD COLUMN quick INTEGER NOT NULL DEFAULT 0")?;
     }
@@ -192,6 +204,26 @@ fn migrate(conn: &Connection) -> Result<()> {
              UPDATE files SET folder = CASE WHEN NEW.member <> '' THEN NEW.source_id || ':' || NEW.path || '/' ELSE NEW.source_id || ':' || rtrim(NEW.path, replace(NEW.path, '/', '')) END WHERE id = NEW.id;
          END;",
     )?;
+    // Erste Fassung der Optionen je Spiel kannte nur VICE (unveröffentlicht, nur Testfassungen).
+    let old_options: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'emu_options')",
+        [],
+        |r| r.get(0),
+    )?;
+    if old_options {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO emu_game_options(sha1, family, args) SELECT sha1, 'vice', args FROM emu_options;
+             DROP TABLE emu_options;",
+        )?;
+    }
+    // Die übliche Ladeadresse $0801 wird nicht mehr angezeigt, nur Abweichungen.
+    if get_setting(conn, "migr_load_0801")?.is_none() {
+        conn.execute(
+            "UPDATE contents SET detail = NULL WHERE detail = 'Ladeadresse $0801'",
+            [],
+        )?;
+        set_setting(conn, "migr_load_0801", "1")?;
+    }
     // Eigene Angaben zu Spielen mit ScreenScraper-Nummer stammen aus der Zeit, als der Dialog die Angaben
     // von ScreenScraper vorbelegte, ohne das zu vermerken: vorsichtshalber als „bearbeitet“ (nicht teilbar).
     if get_setting(conn, "migr_own_edited")?.is_none() {
@@ -274,8 +306,20 @@ pub fn add_local_source(conn: &Connection, folder: &Path) -> Result<i64> {
 
 /// Ordner auf einem Ultimate-Gerät als Quelle, `path` z. B. `/USB0/Spiele`.
 pub fn add_ultimate_source(conn: &Connection, host: &str, path: &str, label: &str) -> Result<i64> {
+    add_device_source(conn, crate::remote::ULTIMATE, host, path, label)
+}
+
+/// Ordner auf einem Gerät als Quelle (Art der Quelle bleibt „ultimate“ = Gerät; das Protokoll steht
+/// im Ort: `ftp://…` für den Ultimate, `bmc64://…` für BMC64).
+pub fn add_device_source(
+    conn: &Connection,
+    device_kind: &str,
+    host: &str,
+    path: &str,
+    label: &str,
+) -> Result<i64> {
     let path = format!("/{}", path.trim().trim_matches('/'));
-    let location = format!("ftp://{}{}", host.trim(), path);
+    let location = crate::remote::location(device_kind, host, &path);
     if let Some(id) = conn
         .query_row(
             "SELECT id FROM sources WHERE location = ?",
@@ -704,6 +748,21 @@ fn mark_folder_sets(conn: &Connection, rows: &mut [GameRow]) -> Result<()> {
     Ok(())
 }
 
+/// Dateiname mit Szene-Kennung: ein „+“ direkt hinter dem Namen („ai-cyberpatrol+.prg“,
+/// „djar104+ds[r]“, „Void Striker+(AI)“, „Jack+2D“). Nur für die Wahl des Vertreters einer Gruppe
+/// (Original vor Crack); Gruppen und Suche bleiben unberührt. „International Karate +“ mit
+/// Leerzeichen zählt nicht; Namen wie „ik+“ verlieren höchstens den Gleichstand.
+fn scene_file(file_title: &str) -> bool {
+    let mut prev: Option<char> = None;
+    for c in file_title.chars() {
+        if c == '+' && prev.is_some_and(|p| !p.is_whitespace() && p != '+') {
+            return true;
+        }
+        prev = Some(c);
+    }
+    false
+}
+
 fn group_rows(rows: Vec<GameRow>) -> Vec<GameRow> {
     use std::collections::HashMap;
     // Titel → Spielnummer, damit Fassungen ohne Abruf zu abgerufenen finden.
@@ -791,6 +850,8 @@ fn group_rows(rows: Vec<GameRow>) -> Vec<GameRow> {
                         v[i].meta_status.as_deref() == Some("ok"),
                         first_disk(&v[i]),
                         plain(&v[i]),
+                        // „+“ im Spielnamen selbst (Fist+, Uridium+) ist keine Szene-Kennung.
+                        !(scene_file(&v[i].file_title) && !scene_file(&v[i].title)),
                         v[i].locations,
                         std::cmp::Reverse(i),
                     )
@@ -988,7 +1049,9 @@ pub fn details(conn: &Connection, sha1: &str) -> Result<Details> {
             },
         )
         .optional()?;
-    let mut st = conn.prepare("SELECT kind, file FROM media WHERE sha1 = ? ORDER BY kind DESC")?;
+    let mut st = conn.prepare("SELECT kind, file FROM media WHERE sha1 = ?
+         ORDER BY CASE kind WHEN 'sstitle' THEN 0 WHEN 'ss' THEN 1 WHEN 'ss2' THEN 2 WHEN 'ss3' THEN 3
+                            WHEN 'ss4' THEN 4 ELSE 9 END")?;
     let media = st
         .query_map([sha1], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?;
@@ -1262,6 +1325,42 @@ pub fn note_of(conn: &Connection, sha1s: &[String]) -> Result<Note> {
     Ok(Note::default())
 }
 
+/// Zusätzliche Emulator-Optionen eines Spiels für eine Emulatorfamilie: die ersten vorhandenen unter den Fassungen.
+pub fn emu_options_of(conn: &Connection, sha1s: &[String], family: &str) -> Result<String> {
+    let mut st =
+        conn.prepare_cached("SELECT args FROM emu_game_options WHERE sha1 = ? AND family = ?")?;
+    for sha1 in sha1s {
+        if let Some(a) = st.query_row([sha1, family], |r| r.get(0)).optional()? {
+            return Ok(a);
+        }
+    }
+    Ok(String::new())
+}
+
+/// Emulator-Optionen für alle Fassungen eines Spiels speichern; leer = löschen.
+pub fn save_emu_options(
+    conn: &Connection,
+    sha1s: &[String],
+    family: &str,
+    args: &str,
+) -> Result<()> {
+    let args = args.trim();
+    for sha1 in sha1s {
+        if args.is_empty() {
+            conn.execute(
+                "DELETE FROM emu_game_options WHERE sha1 = ? AND family = ?",
+                [sha1, family],
+            )?;
+        } else {
+            conn.execute(
+                "INSERT OR REPLACE INTO emu_game_options(sha1, family, args) VALUES(?, ?, ?)",
+                params![sha1, family, args],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 /// Notiz für alle Fassungen eines Spiels speichern; leer = löschen.
 pub fn save_note(conn: &Connection, sha1s: &[String], n: &Note) -> Result<()> {
     let rating = n.rating.clamp(0, 5);
@@ -1376,7 +1475,7 @@ pub fn rewrite_drive(conn: &Connection, old: &str, new: &str) -> Result<usize> {
     n += conn.execute(
         &format!(
             "UPDATE settings SET value = ?2 || substr(value, 3)
-             WHERE key = 'emulator_path' AND {}",
+             WHERE (key = 'emulator_path' OR key GLOB 'emulator_path_[0-9]*') AND {}",
             pattern("value")
         ),
         params![old, new],
@@ -1390,6 +1489,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn szene_kennung_im_dateinamen() {
+        for f in [
+            "ai-cyberpatrol+",
+            "djar104+ds[r]",
+            "Void Striker+(AI)",
+            "xi-coastdefense+",
+            "Jack the Ninja+2D",
+        ] {
+            assert!(scene_file(f), "{f}");
+        }
+        for f in [
+            "International Karate +",
+            "Void Striker",
+            "coastdefense",
+            "+start",
+            "",
+        ] {
+            assert!(!scene_file(f), "{f}");
+        }
+    }
+
+    #[test]
+    fn emulator_optionen_je_spiel() {
+        let conn = open_in_memory().unwrap();
+        let both = ["a".to_string(), "b".to_string()];
+        save_emu_options(&conn, &both, "vice", " -ntsc ").unwrap();
+        save_emu_options(&conn, &both, "denise", "-vic-6567R8").unwrap();
+        assert_eq!(
+            emu_options_of(&conn, &["b".to_string()], "vice").unwrap(),
+            "-ntsc"
+        );
+        assert_eq!(
+            emu_options_of(&conn, &both, "denise").unwrap(),
+            "-vic-6567R8"
+        );
+        save_emu_options(&conn, &both, "vice", "").unwrap();
+        assert_eq!(emu_options_of(&conn, &both, "vice").unwrap(), "");
+        assert_eq!(
+            emu_options_of(&conn, &both, "denise").unwrap(),
+            "-vic-6567R8"
+        );
+    }
+
+    #[test]
     fn laufwerk_umschreiben() {
         let conn = open_in_memory().unwrap();
         conn.execute_batch(
@@ -1399,7 +1542,8 @@ mod tests {
         )
         .unwrap();
         set_setting(&conn, "emulator_path", "E:\\VICE\\bin\\x64sc.exe").unwrap();
-        assert_eq!(rewrite_drive(&conn, "E:", "F:").unwrap(), 3);
+        set_setting(&conn, "emulator_path_2", "E:\\Denise\\Denise.exe").unwrap();
+        assert_eq!(rewrite_drive(&conn, "E:", "F:").unwrap(), 4);
         let locs: Vec<String> = conn
             .prepare("SELECT location FROM sources ORDER BY id")
             .unwrap()
@@ -1414,6 +1558,10 @@ mod tests {
         assert_eq!(
             get_setting(&conn, "emulator_path").unwrap().as_deref(),
             Some("F:\\VICE\\bin\\x64sc.exe")
+        );
+        assert_eq!(
+            get_setting(&conn, "emulator_path_2").unwrap().as_deref(),
+            Some("F:\\Denise\\Denise.exe")
         );
         assert_eq!(
             get_setting(&conn, "portable_drive").unwrap().as_deref(),

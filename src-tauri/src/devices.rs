@@ -1,11 +1,11 @@
-//! Befehle für Ultimate-Geräte: anlegen, prüfen, Ordner als Quelle, Spiele starten.
+//! Befehle für Geräte (Ultimate, BMC64, TeensyROM): anlegen, prüfen, Ordner als Quelle, Spiele starten.
 //!
-//! Ein Netzwerk-Passwort des Geräts (falls gesetzt) liegt im Schlüsselbund.
+//! Ein Netzwerk-Passwort bzw. die BMC64-PIN (falls gesetzt) liegt im Schlüsselbund.
 
 use base64::Engine;
 use breadbin_core::launch::{self, Device, DeviceInfo, LaunchResult};
 use breadbin_core::tr;
-use breadbin_core::{db, emulator, metadata, power, screenshot};
+use breadbin_core::{bmc64, db, emulator, metadata, power, screenshot, teensyrom};
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
@@ -70,7 +70,7 @@ pub fn add_device_folder(
 ) -> CmdResult<i64> {
     let conn = state.conn.lock().unwrap();
     let dev = launch::get_device(&conn, device_id).map_err(err)?;
-    let id = db::add_ultimate_source(&conn, &dev.host, &path, &dev.name).map_err(err)?;
+    let id = db::add_device_source(&conn, &dev.kind, &dev.host, &path, &dev.name).map_err(err)?;
     db::set_source_quick(&conn, id, quick).map_err(err)?;
     Ok(id)
 }
@@ -116,12 +116,14 @@ pub async fn find_emulators() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Startet ein Spiel im eingestellten Emulator. `disks` = alle Disketten desselben Spiels (für den Wechsel).
+/// Startet ein Spiel in einem eingestellten Emulator (`index`, Standard der erste). `disks` = alle
+/// Disketten desselben Spiels (für den Wechsel).
 #[tauri::command]
 pub async fn launch_emulator(
     app: AppHandle,
     sha1: String,
     disks: Option<Vec<String>>,
+    index: Option<usize>,
 ) -> CmdResult<emulator::EmuResult> {
     let db_path = app.state::<AppState>().db_path.clone();
     let dir = db_path
@@ -130,8 +132,11 @@ pub async fn launch_emulator(
         .ok_or_else(|| err("Datenordner unbekannt"))?;
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db::open(&db_path).map_err(err)?;
-        let get = |k: &str| db::get_setting(&conn, k).ok().flatten().unwrap_or_default();
-        let (path, args) = (get("emulator_path"), get("emulator_args"));
+        let emu = emulator::list(&conn)
+            .into_iter()
+            .nth(index.unwrap_or(0))
+            .unwrap_or_default();
+        let (path, args) = (emu.path, emu.args);
         let result = emulator::start(
             &conn,
             &sha1,
@@ -212,6 +217,24 @@ pub async fn capture_screen(
     crop: bool,
 ) -> CmdResult<String> {
     let dev = device(&app, device_id)?;
+    if dev.is_bmc64() {
+        return Err(tr!(
+            "BMC64 liefert keine Bildschirmfotos.",
+            "BMC64 provides no screenshots."
+        ));
+    }
+    if launch::is_cartridge_ultimate(&dev.product) {
+        return Err(tr!(
+            "Das 1541 Ultimate II/II+ liefert keine Bildschirmfotos – das geht nur mit Ultimate 64 und C64 Ultimate.",
+            "The 1541 Ultimate II/II+ provides no screenshots – only Ultimate 64 and C64 Ultimate can do that."
+        ));
+    }
+    if dev.is_teensyrom() {
+        return Err(tr!(
+            "TeensyROM liefert keine Bildschirmfotos.",
+            "TeensyROM provides no screenshots."
+        ));
+    }
     let png = tauri::async_runtime::spawn_blocking(move || {
         let frame = screenshot::capture(
             &dev.host,
@@ -259,6 +282,28 @@ pub async fn device_status(app: AppHandle, id: i64) -> CmdResult<DeviceStatus> {
     let dev = device(&app, id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let password = device_password(&dev.host);
+        if dev.is_bmc64() {
+            let st = bmc64::quick_status(&dev.host, &password);
+            return DeviceStatus {
+                online: st.is_some(),
+                can_wake: false,
+                can_power_off: false,
+                firmware: st.as_ref().map(|s| s.version.clone()).unwrap_or_default(),
+                kernal: String::new(),
+                hints: st.as_ref().map(bmc64::hints).unwrap_or_default(),
+            };
+        }
+        if dev.is_teensyrom() {
+            let st = teensyrom::quick_status(&dev.host);
+            return DeviceStatus {
+                online: st.is_some(),
+                can_wake: false,
+                can_power_off: false,
+                firmware: st.as_ref().map(|s| s.version.clone()).unwrap_or_default(),
+                kernal: String::new(),
+                hints: st.as_ref().map(teensyrom::hints).unwrap_or_default(),
+            };
+        }
         let online = power::is_online(&dev.host, &password);
         let (firmware, kernal, product) = if online {
             let rest = launch::Rest::new(&dev.host, &password);
@@ -341,8 +386,7 @@ pub async fn list_device_dirs(
 ) -> CmdResult<Vec<String>> {
     let dev = device(&app, device_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let mut f = breadbin_core::ftp::Ftp::connect(&dev.host, &device_password(&dev.host))
-            .map_err(err)?;
+        let mut f = launch::connect(&dev, &device_password(&dev.host)).map_err(err)?;
         let path = if path.trim().is_empty() {
             "/".to_string()
         } else {

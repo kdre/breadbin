@@ -12,7 +12,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::screenscraper::{self, ApiError, Game, Lookup, RomQuery};
 
 /// Bildarten, die geladen werden: Spielszene, Titelbild, Verpackung.
-pub const MEDIA_KINDS: [&str; 3] = ["ss", "sstitle", "box-2D"];
+pub const MEDIA_KINDS: [&str; 6] = ["ss", "sstitle", "box-2D", "ss2", "ss3", "ss4"];
+/// Bildarten, die ScreenScraper liefert (und die schon Breadbin vor 0.9.4 kannte).
+pub const BASE_KINDS: [&str; 3] = ["ss", "sstitle", "box-2D"];
+/// Weitere eigene Spielszenen (ab 0.9.4). Im Austauschformat stehen sie in `more_images`, damit ältere
+/// Fassungen das Spiel nicht wegen einer unbekannten Bildart ablehnen.
+pub const EXTRA_SCENES: [&str; 3] = ["ss2", "ss3", "ss4"];
 /// So oft wird bei „ausgelastet“ nach einer Pause neu versucht.
 const BUSY_RETRIES: u32 = 3;
 const BUSY_PAUSE: Duration = Duration::from_secs(15);
@@ -659,7 +664,7 @@ fn fetch_media(
     dir: &Path,
 ) -> (Vec<(String, String)>, Option<anyhow::Error>) {
     let mut out = Vec::new();
-    for kind in MEDIA_KINDS {
+    for kind in BASE_KINDS {
         let Some(m) = screenscraper::best_media(g, kind) else {
             continue;
         };

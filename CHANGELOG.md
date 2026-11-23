@@ -2,6 +2,43 @@
 
 English first, German below each version. / Englisch zuerst, Deutsch jeweils darunter.
 
+## 0.9.4 (2026-11-23)
+
+- After a scan, a message lists which files are new and which are missing since the last scan (up to 500 each per
+  source). / Nach einem Scan nennt eine Meldung, welche Dateien seit dem letzten Scan neu sind und welche fehlen
+  (je Quelle bis zu 500).
+- Games that need a preloaded REU (e.g. Myst 64REU): if a `.reu` file with the same name lies next to the game, Breadbin
+  loads it on start – in VICE and Denise, and on the Ultimate (REU and Command Interface are switched on for the
+  session only, the earlier settings come back with the next start without a REU image). / Spiele, die ein vorgeladenes
+  REU brauchen (z. B. Myst 64REU): Liegt neben dem Spiel eine `.reu` mit gleichem Namen, lädt Breadbin sie beim Start
+  mit – in VICE und Denise sowie auf dem Ultimate (REU und Command Interface werden nur vorübergehend eingeschaltet, die
+  vorherigen Einstellungen kommen beim nächsten Start ohne REU-Abbild zurück).
+- The load address of PRG files is only shown when it differs from the usual $0801. / Die Ladeadresse von PRG-Dateien
+  steht nur noch da, wenn sie vom üblichen $0801 abweicht.
+- The list shows all results (more rows load while scrolling) instead of stopping at 1,000. / Die Liste zeigt alle
+  Treffer (weitere Zeilen beim Blättern) statt bei 1 000 aufzuhören.
+- Up to four own in-game pictures per game (shared as `more_images`, which older versions skip). / Bis zu vier eigene
+  Spielszenen je Spiel (geteilt als `more_images`, das ältere Fassungen überspringen).
+- Extra emulator options per game, e.g. `-ntsc` or `-reu`. / Zusätzliche Emulator-Optionen je Spiel, etwa `-ntsc` oder
+  `-reu`.
+- The Denise emulator works as well: “Find emulator” finds it, and Breadbin passes just the file (Denise does not know
+  VICE's `-autostart`). / Der Emulator Denise geht ebenfalls: „Emulator suchen“ findet ihn, und Breadbin übergibt nur
+  die Datei (Denise kennt VICEs `-autostart` nicht).
+- Several emulators can be set up (up to eight); each appears in the device selection of the details. Per-game options
+  are kept separately for each kind of emulator. / Mehrere Emulatoren lassen sich einrichten (bis zu acht); jeder
+  erscheint in der Geräteauswahl der Details. Optionen je Spiel gelten getrennt je Art Emulator.
+- 1541 Ultimate II, II+ and II+L are recognised by their product name: screenshot and automatic title picture are hidden,
+  the ⚠ hint says what works (still untested). / 1541 Ultimate II, II+ und II+L werden am Produktnamen erkannt:
+  Bildschirmfoto und automatisches Titelbild sind ausgeblendet, das ⚠ nennt, was geht (weiter ungetestet).
+- BMC64 on the Raspberry Pi as a second kind of device: upload and start games via its web interface (all formats
+  including TAP), scan folders on the Pi, copy games, fetch saved games, network search, PIN. / BMC64 auf dem
+  Raspberry Pi als zweite Geräteart: Spiele über dessen Weboberfläche hochladen und starten (alle Formate einschließlich
+  TAP), Ordner auf dem Pi scannen, Spiele kopieren, Spielstände holen, Suche im Netz, PIN.
+- TeensyROM as a third kind of device (**untested**, built from the protocol documentation without a real device):
+  upload and start PRG, P00, T64, CRT and single-file disks over TCP port 2112, scan folders, copy games. /
+  TeensyROM als dritte Geräteart (**ungetestet**, nach der Protokoll-Doku ohne echtes Gerät gebaut): PRG, P00, T64,
+  CRT und Disketten mit einer Programmdatei über TCP-Port 2112 hochladen und starten, Ordner scannen, Spiele kopieren.
+
 ## 0.9.3 (2026-11-20)
 
 - Short version history in the About dialog. / Kurzer Versionsverlauf im Dialog „Über Breadbin“.

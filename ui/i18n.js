@@ -41,7 +41,8 @@ const EN = {
   "+ Ordner": "+ Folder",
   "Alle scannen": "Scan all",
   "Ultimate-Geräte": "Ultimate devices",
-  "Ultimate 64, C64 Ultimate oder 1541 Ultimate II+ hinzufügen": "Add an Ultimate 64, C64 Ultimate or 1541 Ultimate II+",
+  "Ultimate 64, C64 Ultimate, 1541 Ultimate II+, BMC64 oder TeensyROM hinzufügen": "Add an Ultimate 64, C64 Ultimate, 1541 Ultimate II+, BMC64 or TeensyROM",
+  "Geräte": "Devices",
   "+ Gerät": "+ Device",
   "Beschreibungen": "Descriptions",
   "Zugang zu ScreenScraper und Sprache einrichten": "Set up ScreenScraper access and app language",
@@ -140,7 +141,19 @@ const EN = {
     "Ultimate 64, C64 Ultimate or 1541 Ultimate II+ on the network. FTP and the REST interface (“Web Remote Control Service”, firmware 3.11 or later) are required.",
   "Im Netz suchen": "Search network",
   "Adresse (IP oder Name)": "Address (IP or name)",
-  "Netzwerk-Passwort (nur falls am Gerät gesetzt)": "Network password (only if set on the device)",
+  "Netzwerk-Passwort bzw. BMC64-PIN (nur falls gesetzt)": "Network password or BMC64 PIN (only if set)",
+  "Oder BMC64 auf einem Raspberry Pi: im BMC64-Menü Netzwerk und „Web UI“ einschalten (ab BMC64 5.5.1).":
+    "Or BMC64 on a Raspberry Pi: turn on networking and “Web UI” in the BMC64 menu (BMC64 5.5.1 or later).",
+  "Oder TeensyROM (ungetestet): am Gerät „Enable TCP Listener“ einschalten; Adresse von Hand eintragen.":
+    "Or TeensyROM (untested): turn on “Enable TCP Listener” on the device; enter the address by hand.",
+  "Geräteart": "Device type",
+  "TeensyROM (ungetestet)": "TeensyROM (untested)",
+  "TeensyROM-Unterstützung ist ungetestet.": "TeensyROM support is untested.",
+  "TeensyROM kann {format} nicht starten.": "TeensyROM cannot launch {format}.",
+  "TeensyROM (ungetestet) startet nur Disketten mit einer einzigen Programmdatei; mehrteilige Disk-Spiele gehen nicht.":
+    "TeensyROM (untested) only launches disks with a single program file; multi-file disk games do not work.",
+  "Starten setzt den C64 zurück und startet dieses Spiel über den TeensyROM (ungetestet).":
+    "Launch resets the C64 and starts this game through the TeensyROM (untested).",
   "Verbinden und prüfen": "Connect and check",
   "Name": "Name",
   "Startordner auf dem Gerät": "Launch folder on the device",
@@ -189,6 +202,14 @@ const EN = {
   "{n} unverändert": "{n} unchanged",
   "{n} per Schnellscan übernommen": "{n} taken over by quick scan",
   "{n} entfernt": "{n} removed",
+  "{n} Dateien neu": "{n} new files",
+  "{n} geändert": "{n} changed",
+  "{n} fehlen": "{n} missing",
+  "… und {n} weitere": "… and {n} more",
+  "Erster Scan: {n} Dateien aufgenommen.": "First scan: {n} files added.",
+  "{n} Dateien neu:": "{n} new files:",
+  "{n} Dateien fehlen und wurden aus der Bibliothek entfernt:": "{n} files are missing and were removed from the library:",
+  "Scan: {added} neu, {removed} fehlen": "Scan: {added} new, {removed} missing",
   "{n} Fehler": "{n} errors",
   "abgebrochen": "cancelled",
   "fertig": "done",
@@ -394,8 +415,8 @@ const EN = {
   "Bearbeiten": "Edit",
   "Dateien löschen, die Breadbin zum Starten in den Startordner kopiert hat": "Delete the files Breadbin copied to the launch folder to start games",
   "Startordner leeren": "Empty launch folder",
-  "Noch kein Gerät. Mit „+ Gerät“ einen Ultimate im Netzwerk hinzufügen, um Spiele dort zu starten.":
-    "No device yet. Use “+ Device” to add an Ultimate on your network and launch games on it.",
+  "Noch kein Gerät. Mit „+ Gerät“ einen Ultimate, BMC64 oder TeensyROM im Netzwerk hinzufügen, um Spiele dort zu starten.":
+    "No device yet. Use “+ Device” to add an Ultimate, BMC64 or TeensyROM on your network and launch games on it.",
   "an": "on",
   "aus": "off",
   "unbekannt": "unknown",
@@ -427,6 +448,19 @@ const EN = {
   "Keine Unterordner.": "No subfolders.",
   "Bitte einen Ordner auf einem Laufwerk wählen, z. B. /USB0/Spiele.": "Please choose a folder on a drive, e.g. /USB0/Games.",
   "Bandabbilder (TAP) lassen sich noch nicht starten.": "Tape images (TAP) cannot be launched yet.",
+  "Zusätzliche Optionen nur für dieses Spiel (alle Fassungen) und diese Art Emulator (VICE, Denise …). Sie stehen vor den allgemeinen Optionen aus den Einstellungen.":
+    "Extra options for this game only (all versions) and this kind of emulator (VICE, Denise …). They come before the general options from the settings.",
+  "Optionen für dieses Spiel": "Options for this game",
+  "Spielszene 2": "In-game 2",
+  "Spielszene 3": "In-game 3",
+  "Spielszene 4": "In-game 4",
+  "Bildschirmfoto gespeichert als {kind}.": "Screenshot saved as {kind}.",
+  "z. B. -ntsc -reu": "e.g. -ntsc -reu",
+  "Emulator-Optionen für dieses Spiel gespeichert.": "Emulator options for this game saved.",
+  "Emulator-Optionen für dieses Spiel entfernt.": "Emulator options for this game removed.",
+  "Bandabbilder (TAP) startet nur BMC64; auf dem Ultimate geht das noch nicht.": "Only BMC64 launches tape images (TAP); the Ultimate cannot do this yet.",
+  "Starten beendet, was gerade in BMC64 läuft, und startet dieses Spiel (Autostart). Diskwechsel nur im BMC64-Menü.":
+    "Launching ends whatever is running in BMC64 and starts this game (autostart). Disk swaps only in the BMC64 menu.",
   "Starten": "Launch",
   "Starten beendet, was gerade auf dem C64 läuft, und startet dieses Spiel.": "Launch ends whatever is running on the C64 and starts this game.",
   "{name} ist aus und lässt sich nicht aus der App einschalten.": "{name} is off and cannot be powered on from the app.",
@@ -509,23 +543,28 @@ const EN = {
   "Nach dem Starten ein Titelbild aufnehmen, wenn das Spiel noch keines hat":
     "After launching, take a title picture if the game has none yet",
   "Wartezeit bis zur Aufnahme in Sekunden": "Delay before taking it, in seconds",
-  "Emulator (freiwillig)": "Emulator (optional)",
-  "Spiele auch ohne Ultimate auf dem Rechner starten, etwa mit VICE (x64sc). Breadbin legt dafür eine Kopie im Datenordner ab; was ein Spiel auf seine Diskette speichert, bleibt dort erhalten.":
-    "Launch games on this computer, even without an Ultimate, e.g. with VICE (x64sc). Breadbin puts a copy in its data folder; whatever a game saves to its disk is kept there.",
+  "Emulatoren (freiwillig)": "Emulators (optional)",
+  "Spiele auch ohne Ultimate auf dem Rechner starten, etwa mit VICE (x64sc) oder Denise. Breadbin legt dafür eine Kopie im Datenordner ab; was ein Spiel auf seine Diskette speichert, bleibt dort erhalten. Jeder Emulator erscheint in den Details als eigener Eintrag in der Geräteauswahl.":
+    "Launch games on this computer, even without an Ultimate, e.g. with VICE (x64sc) or Denise. Breadbin puts a copy in its data folder; whatever a game saves to its disk is kept there. Each emulator appears as its own entry in the device selection in the details.",
+  "Emulatoren suchen": "Find emulators",
+  "Emulator hinzufügen": "Add emulator",
+  "Diesen Emulator entfernen": "Remove this emulator",
+  "z. B. …/x64sc oder …/Denise": "e.g. …/x64sc or …/Denise",
+  "Höchstens {n} Emulatoren.": "At most {n} emulators.",
+  "{n} Emulator(en) gefunden, {m} neu eingetragen – zum Übernehmen speichern.": "{n} emulator(s) found, {m} added – save to keep them.",
+  "z. B. -vic-6567R8 -reu 512": "e.g. -vic-6567R8 -reu 512",
   "Programm": "Program",
-  "z. B. …/x64sc": "e.g. …/x64sc",
-  "VICE suchen": "Find VICE",
   "Auswählen …": "Choose …",
   "Aufruf": "Command line",
-  "{file} steht für die Spieldatei. Für VICE passt die Vorgabe; bei Spielen mit mehreren Disketten bekommt VICE eine Wechselliste (nächste Diskette: „Fliplist“ im VICE-Menü, meist Alt+N).":
-    "{file} stands for the game file. The default suits VICE; for games with several disks VICE gets a flip list (next disk: “Fliplist” in the VICE menu, usually Alt+N).",
-  "VICE nicht gefunden – bitte das Programm x64sc selbst auswählen (vice-emu.sourceforge.io).":
-    "VICE not found – please choose the x64sc program yourself (vice-emu.sourceforge.io).",
-  "Emulator auswählen (z. B. x64sc)": "Choose emulator (e.g. x64sc)",
+  "{file} steht für die Spieldatei. Die Vorgabe passt für VICE und Denise; bei Spielen mit mehreren Disketten bekommt VICE eine Wechselliste (nächste Diskette: „Fliplist“ im VICE-Menü, meist Alt+N).":
+    "{file} stands for the game file. The default suits VICE and Denise; for games with several disks VICE gets a flip list (next disk: “Fliplist” in the VICE menu, usually Alt+N).",
+  "Kein Emulator gefunden – bitte VICE (x64sc, vice-emu.sourceforge.io) oder Denise (deniseemu.sourceforge.io) selbst auswählen.":
+    "No emulator found – please choose VICE (x64sc, vice-emu.sourceforge.io) or Denise (deniseemu.sourceforge.io) yourself.",
+  "Emulator auswählen (z. B. x64sc oder Denise)": "Choose emulator (e.g. x64sc or Denise)",
   "{name} (Emulator)": "{name} (emulator)",
   "Startet das Spiel in einem neuen Emulator-Fenster auf diesem Rechner.": "Starts the game in a new emulator window on this computer.",
   "Starte „{title}“ im Emulator …": "Starting “{title}” in the emulator …",
-  "Im Emulator die nächste Diskette über „Fliplist“ im VICE-Menü einlegen (meist Alt+N).": "In the emulator, insert the next disk via “Fliplist” in the VICE menu (usually Alt+N).",
+  "Im Emulator die nächste Diskette einlegen: in VICE über „Fliplist“ (meist Alt+N), sonst über das Laufwerksmenü des Emulators.": "In the emulator, insert the next disk: in VICE via “Fliplist” (usually Alt+N), otherwise via the emulator's drive menu.",
   "Nur Ultimate 64 und C64 Ultimate mit Netzwerkkabel. Das Bild wird als eigenes Titelbild gespeichert und lässt sich in den Details ersetzen.":
     "Ultimate 64 and C64 Ultimate with a network cable only. The picture is saved as your own title picture and can be replaced in the details.",
   "Titelbild von {name} aufgenommen – in den Details lässt es sich ersetzen.":

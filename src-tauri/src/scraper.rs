@@ -8,7 +8,7 @@ use breadbin_core::screenscraper::{
     ApiError, Choice, Client, Credentials, Game, Lookup, Proposal, UserInfo,
 };
 use breadbin_core::tr;
-use breadbin_core::{db, metadata, share};
+use breadbin_core::{db, emulator, metadata, share};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -124,11 +124,20 @@ pub struct ScraperSettings {
     auto_title: bool,
     /// Sekunden zwischen Start und Aufnahme.
     auto_title_delay: i64,
-    /// Emulator auf dem Rechner (leer = keiner) und seine Aufrufzeile (`{file}` = Spieldatei).
-    emulator_path: String,
-    emulator_args: String,
+    /// Emulatoren auf dem Rechner (Programm, Aufrufzeile mit `{file}` = Spieldatei; leer = Vorgabe).
+    emulators: Vec<EmuInfo>,
     default_emulator_args: &'static str,
     softname: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct EmuInfo {
+    path: String,
+    args: String,
+    /// Anzeigename („x64sc“, „denise“), Familie für die Optionen je Spiel und Vorgabe-Aufruf.
+    name: String,
+    family: String,
+    default_args: &'static str,
 }
 
 #[derive(Deserialize)]
@@ -160,9 +169,7 @@ pub struct ScraperSettingsInput {
     #[serde(default)]
     auto_title_delay: Option<i64>,
     #[serde(default)]
-    emulator_path: Option<String>,
-    #[serde(default)]
-    emulator_args: Option<String>,
+    emulators: Option<Vec<emulator::Emulator>>,
 }
 
 /// Wartezeit für das automatische Titelbild: Standard 25 s, erlaubt 5–180 s.
@@ -241,6 +248,7 @@ fn language(state: &AppState) -> String {
 #[tauri::command]
 pub fn get_scraper_settings(state: State<AppState>) -> ScraperSettings {
     let user = setting(&state, "screenscraper.user");
+    let emulators = emulator::list(&state.conn.lock().unwrap());
     // Die Sperre je Wert für sich nehmen und freigeben: Ein Wächter in einem Ausdruck lebt bis zu
     // dessen Ende, eine zweite Sperre darin hängt sich auf.
     let (keep_awake, prefer_shared, update_check, community_auto, auto_title, auto_title_delay) = {
@@ -287,8 +295,16 @@ pub fn get_scraper_settings(state: State<AppState>) -> ScraperSettings {
         community_auto,
         auto_title,
         auto_title_delay,
-        emulator_path: setting(&state, "emulator_path"),
-        emulator_args: setting(&state, "emulator_args"),
+        emulators: emulators
+            .into_iter()
+            .map(|e| EmuInfo {
+                name: emulator::display_name(&e.path),
+                family: emulator::family(&e.path),
+                default_args: emulator::default_args(&e.path),
+                path: e.path,
+                args: e.args,
+            })
+            .collect(),
         default_emulator_args: breadbin_core::emulator::DEFAULT_ARGS,
         softname: SOFTNAME,
     }
@@ -377,18 +393,8 @@ pub fn save_scraper_settings(state: State<AppState>, input: ScraperSettingsInput
     if let Some(n) = input.auto_title_delay {
         db::set_setting(&conn, "auto_title_delay", &n.clamp(5, 180).to_string()).map_err(err)?;
     }
-    if let Some(p) = input.emulator_path {
-        db::set_setting(&conn, "emulator_path", p.trim()).map_err(err)?;
-    }
-    if let Some(a) = input.emulator_args {
-        // Die eingebaute Aufrufzeile nicht speichern, damit spätere Fassungen ihre eigene nehmen.
-        let a = a.trim();
-        let keep = if a == breadbin_core::emulator::DEFAULT_ARGS {
-            ""
-        } else {
-            a
-        };
-        db::set_setting(&conn, "emulator_args", keep).map_err(err)?;
+    if let Some(list) = input.emulators {
+        emulator::save_list(&conn, &list).map_err(err)?;
     }
     if let Some(src) = input
         .preferred_source

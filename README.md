@@ -7,7 +7,7 @@ A project by [8bitcavern.de](https://8bitcavern.de). Contact: breadbin@8bitcaver
 Breadbin is a free desktop app for Windows, macOS and Linux that keeps track of your Commodore 64
 games: it catalogs local folders, network drives and the USB sticks of Ultimate devices, shows what
 is stored where, adds descriptions and pictures, and starts games directly on an Ultimate 64,
-a C64 Ultimate or a 1541 Ultimate II+.
+a C64 Ultimate, a 1541 Ultimate II+ or BMC64 on a Raspberry Pi.
 
 The app speaks English and German (following the system language, switchable in the settings) and
 has a built-in manual (“?” button or F1).
@@ -49,6 +49,17 @@ has a built-in manual (“?” button or F1).
 - Copy marked games to a folder on the device, to find them in the Ultimate menu without a computer
 - Device status, switch on via Wake-on-WiFi, switch off, search the network, browse device folders
 
+**BMC64 (Raspberry Pi)**
+- Upload and start games via the BMC64 web interface (Web UI, BMC64 5.5.1 or later) – all formats including
+  T64 and TAP; scan folders on the Pi's SD card or USB stick, copy games, fetch saved games, optional PIN
+- Not possible with BMC64: disk swap without a restart, screenshots, switching on/off
+
+**TeensyROM (untested)**
+- Upload and start games over the TeensyROM's TCP remote protocol (port 2112, “Enable TCP Listener”): PRG, P00,
+  T64, CRT and disks with a single program file; scan folders on its SD card or USB stick, copy games
+- Built without a real device – feedback from owners welcome. Not possible: multi-file disk games, G64, TAP, disk
+  swaps, saved games, screenshots, network search
+
 **Emulator**
 - Launch games without an Ultimate in an emulator on your computer, e.g. VICE (`x64sc`) – all formats
   including TAP, also from ZIP archives; saved games stay in the copy, disk sets get a flip list. Other
@@ -79,7 +90,9 @@ Breadbin is not signed with a paid certificate, so the systems warn on the first
   D71, D81, G64 and CRT, disk swap, screenshots, scanning the USB stick
 - Ultimate 64 Elite I (firmware 3.15a): starting PRG, D64, D71, D81, G64 and CRT
 - macOS, Windows and Linux (AppImage on Fedora)
-- Not tested yet: 1541 Ultimate II+. Tape images (TAP) are catalogued but cannot be started yet.
+- BMC64 5.5.2 on a Raspberry Pi 3B+ (Ethernet): network search, scanning a folder on the Pi, uploading and starting
+  PRG, D64, CRT and TAP, saved games, copying
+- Not tested yet: 1541 Ultimate II+ and TeensyROM (built from the protocol documentation only). Tape images (TAP) cannot be started on the Ultimate (BMC64 and the emulator can).
 
 ## License
 

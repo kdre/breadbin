@@ -330,7 +330,7 @@ dependencies = [
 
 [[package]]
 name = "breadbin"
-version = "0.9.3"
+version = "0.9.4"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -348,9 +348,10 @@ dependencies = [
 
 [[package]]
 name = "breadbin-core"
-version = "0.9.3"
+version = "0.9.4"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "crc32fast",
  "hex",
  "image",

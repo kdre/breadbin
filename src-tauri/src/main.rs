@@ -119,6 +119,23 @@ fn save_note(state: State<AppState>, sha1s: Vec<String>, note: db::Note) -> CmdR
     db::save_note(&state.conn.lock().unwrap(), &sha1s, &note).map_err(err)
 }
 
+/// Zusätzliche Emulator-Optionen eines Spiels (die erste vorhandene unter den Fassungen).
+#[tauri::command]
+fn emu_options(state: State<AppState>, sha1s: Vec<String>, family: String) -> CmdResult<String> {
+    db::emu_options_of(&state.conn.lock().unwrap(), &sha1s, &family).map_err(err)
+}
+
+/// Emulator-Optionen für alle Fassungen eines Spiels speichern; leer = keine.
+#[tauri::command]
+fn save_emu_options(
+    state: State<AppState>,
+    sha1s: Vec<String>,
+    family: String,
+    args: String,
+) -> CmdResult<()> {
+    db::save_emu_options(&state.conn.lock().unwrap(), &sha1s, &family, &args).map_err(err)
+}
+
 /// Schreibt alle Treffer der aktuellen Suche als CSV-Datei. Gibt die Zahl der Zeilen zurück.
 #[tauri::command]
 fn export_csv(state: State<AppState>, options: db::Search, path: String) -> CmdResult<usize> {
@@ -712,6 +729,8 @@ fn main() {
             set_in_list,
             game_note,
             save_note,
+            emu_options,
+            save_emu_options,
             set_ungrouped,
             data_path,
             scraper::get_scraper_settings,

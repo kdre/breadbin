@@ -21,11 +21,13 @@
 //! c64scan <db> --share-update <bilderordner> <url>   Gemeinschaftsdaten laden und einlesen
 //! c64scan <db> --copy <host> <ordner> <sha1>...   Spiele in einen Ordner auf dem Gerät kopieren
 //! c64scan <db> --saves <host> <startordner> <zielordner>   geänderte Disketten (Spielstände) holen
-//! c64scan <db> --own-image <bilderordner> <art> <bild> <sha1>...   eigenes Bild setzen (ss, sstitle, box-2D)
+//! c64scan <db> --own-image <bilderordner> <art> <bild> <sha1>...   eigenes Bild setzen (ss, sstitle, box-2D, ss2–ss4)
 //! c64scan <db> --own-json <datei.json> [liste]   eigene Angaben einspielen ([{sha1s:[…], title, year, …}], ersetzt abgerufene);
 //!                                            Inhalte mit eigenen Angaben bleiben unberührt, optional in eine Liste
 //!
-//! Ein Ordner kann auch auf einem Ultimate-Gerät liegen: `ftp://192.0.2.168/USB2/Spiele`.
+//! Ein Ordner kann auch auf einem Ultimate-Gerät liegen: `ftp://192.0.2.168/USB2/Spiele`,
+//! oder auf einem BMC64: `bmc64://192.0.2.170/SD/Spiele`, auf einem TeensyROM:
+//! `teensyrom://192.0.2.80/SD/Spiele` (ungetestet).
 
 use anyhow::{Context, Result};
 use breadbin_core::{db, ftp, launch, power, scan};
@@ -78,6 +80,7 @@ fn main() -> Result<()> {
                 product: String::new(),
                 upload_dir: rest[1].clone(),
                 wifi_mac: String::new(),
+                kind: device_kind(&rest[0]),
             };
             let (deleted, kept) = launch::clean_upload_dir(&dev, "")?;
             println!("{deleted} gelöscht, {kept} fremde Dateien behalten");
@@ -95,6 +98,21 @@ fn main() -> Result<()> {
         );
         let info = launch::probe(host, "")?;
         println!("{info:?}");
+        if info.kind == breadbin_core::remote::BMC64 {
+            let st = breadbin_core::bmc64::Bmc64::new(host, "").status()?;
+            for h in breadbin_core::bmc64::hints(&st) {
+                println!("Hinweis: {h}");
+            }
+            return Ok(());
+        }
+        if info.kind == breadbin_core::remote::TEENSYROM {
+            let st = breadbin_core::teensyrom::TeensyRom::new(host).version()?;
+            println!("{st:?}");
+            for h in breadbin_core::teensyrom::hints(&st) {
+                println!("Hinweis: {h}");
+            }
+            return Ok(());
+        }
         let kernal = launch::Rest::new(host, "").kernal();
         println!("KERNAL: {kernal}");
         for h in launch::device_hints(&info.product, &info.firmware, &kernal) {
@@ -210,6 +228,7 @@ fn main() -> Result<()> {
             product: String::new(),
             upload_dir: dir.clone(),
             wifi_mac: String::new(),
+            kind: device_kind(host),
         };
         let r = launch::copy_to_device(&conn, &rest[3..], &dev, "", &|_| String::new(), dir)?;
         println!("{r:#?}");
@@ -225,6 +244,7 @@ fn main() -> Result<()> {
             product: String::new(),
             upload_dir: dir.clone(),
             wifi_mac: String::new(),
+            kind: device_kind(host),
         };
         for f in launch::fetch_saves(&conn, &dev, "", Path::new(target), None)? {
             println!("geholt: {f}");
@@ -325,6 +345,7 @@ fn main() -> Result<()> {
             product: String::new(),
             upload_dir: dir.clone(),
             wifi_mac: String::new(),
+            kind: device_kind(host),
         };
         println!("{} „{label}“ …", if insert { "Lege ein" } else { "Starte" });
         let r = launch::launch(&conn, &sha1, &dev, "", &|_| String::new(), insert)?;
@@ -414,6 +435,10 @@ fn main() -> Result<()> {
                 r.title,
                 r.formats
             );
+            // SHA=1: Prüfsumme des Vertreters (zum Nachsehen, welche Fassung vorn steht).
+            if std::env::var_os("SHA").is_some() {
+                println!("       {}", r.sha1);
+            }
         }
         return Ok(());
     }
@@ -439,7 +464,13 @@ fn main() -> Result<()> {
     let quick = rest.first().map(String::as_str) == Some("--quick");
     for folder in rest.iter().skip(quick as usize) {
         let id = match ftp_target(folder) {
-            Some((host, path)) => db::add_ultimate_source(&conn, host, path, host)?,
+            Some((host, path)) => db::add_device_source(
+                &conn,
+                breadbin_core::remote::location_kind(folder),
+                host,
+                path,
+                host,
+            )?,
             None => db::add_local_source(&conn, Path::new(folder))?,
         };
         db::set_source_quick(&conn, id, quick)?;
@@ -477,4 +508,15 @@ fn main() -> Result<()> {
 
 fn ftp_target(arg: &str) -> Option<(&str, &str)> {
     ftp::split_location(arg)
+}
+
+/// Geräteart eines Hosts: TeensyROM bzw. BMC64, wenn er sich so meldet, sonst Ultimate.
+fn device_kind(host: &str) -> String {
+    if breadbin_core::teensyrom::quick_status(host).is_some() {
+        breadbin_core::remote::TEENSYROM.into()
+    } else if breadbin_core::bmc64::quick_status(host, "").is_some() {
+        breadbin_core::remote::BMC64.into()
+    } else {
+        breadbin_core::remote::ULTIMATE.into()
+    }
 }

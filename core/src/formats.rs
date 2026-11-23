@@ -73,12 +73,17 @@ fn u32le(d: &[u8], o: usize) -> u32 {
 
 // ---------------------------------------------------------------- PRG / P00
 
+/// Ladeadresse nur nennen, wenn sie vom üblichen BASIC-Start $0801 abweicht.
+fn load_address(addr: u16) -> Option<String> {
+    (addr != 0x0801).then(|| format!("Ladeadresse ${addr:04X}"))
+}
+
 fn prg(d: &[u8]) -> FileInfo {
     if d.len() < 2 {
         return damaged("PRG");
     }
     FileInfo {
-        detail: Some(format!("Ladeadresse ${:04X}", u16le(d, 0))),
+        detail: load_address(u16le(d, 0)),
         ..Default::default()
     }
 }
@@ -90,7 +95,7 @@ fn p00(d: &[u8]) -> FileInfo {
     }
     FileInfo {
         image_name: Some(decode_padded_ascii(&d[8..24])),
-        detail: Some(format!("Ladeadresse ${:04X}", u16le(d, 26))),
+        detail: load_address(u16le(d, 26)),
         ..Default::default()
     }
 }
@@ -284,6 +289,79 @@ fn cbm_disk(d: &[u8], geo: Geometry) -> FileInfo {
     }
 }
 
+/// Programmdatei einer Diskette, für Geräte, die nur einzelne Dateien laden (TeensyROM).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DiskProgram {
+    /// Genau eine Datei (außer DEL-Trennzeilen), und die ist ein geschlossenes PRG: ihr Inhalt.
+    One(Vec<u8>),
+    /// Mehrere Dateien – das Spiel lädt vermutlich nach.
+    Several(usize),
+    /// Keine Programmdatei (leer oder nur SEQ/USR/REL).
+    NoProgram,
+    /// Verzeichnis oder Sektorkette unlesbar.
+    Damaged,
+}
+
+/// Holt die einzige Programmdatei aus einem D64/D71/D81 (`format` in Großbuchstaben).
+pub fn disk_program(format: &str, d: &[u8]) -> DiskProgram {
+    let geo = match format {
+        "D64" => Geometry::D64,
+        "D71" => Geometry::D71,
+        "D81" => Geometry::D81,
+        _ => return DiskProgram::Damaged,
+    };
+    let (_, _, first) = geo.header();
+    // (Typbyte, Startspur, Startsektor) aller Einträge außer DEL.
+    let mut files: Vec<(u8, u8, u8)> = Vec::new();
+    let mut visited = HashSet::new();
+    let (mut t, mut s) = first;
+    while t != 0 && visited.insert((t, s)) && visited.len() <= 300 {
+        let Some(off) = geo.offset(t, s).filter(|o| o + 256 <= d.len()) else {
+            return DiskProgram::Damaged;
+        };
+        let sec = &d[off..off + 256];
+        for e in (0..256).step_by(32) {
+            let typ = sec[e + 2];
+            if typ & 7 != 0 {
+                files.push((typ, sec[e + 3], sec[e + 4]));
+            }
+        }
+        (t, s) = (sec[0], sec[1]);
+    }
+    match files.as_slice() {
+        [] => DiskProgram::NoProgram,
+        [(typ, ft, fs)] if typ & 0x87 == 0x82 => {
+            let mut out = Vec::new();
+            let mut seen = HashSet::new();
+            let (mut t, mut s) = (*ft, *fs);
+            loop {
+                if !seen.insert((t, s)) {
+                    return DiskProgram::Damaged;
+                }
+                let Some(off) = geo.offset(t, s).filter(|o| o + 256 <= d.len()) else {
+                    return DiskProgram::Damaged;
+                };
+                let sec = &d[off..off + 256];
+                if sec[0] == 0 {
+                    // Letzter Sektor: Byte 1 zeigt auf das letzte benutzte Byte.
+                    let last = (sec[1] as usize).max(1);
+                    out.extend_from_slice(&sec[2..=last]);
+                    break;
+                }
+                out.extend_from_slice(&sec[2..]);
+                (t, s) = (sec[0], sec[1]);
+            }
+            if out.len() < 3 {
+                DiskProgram::Damaged
+            } else {
+                DiskProgram::One(out)
+            }
+        }
+        [_] => DiskProgram::NoProgram,
+        many => DiskProgram::Several(many.len()),
+    }
+}
+
 // ---------------------------------------------------------------- G64 / TAP
 
 fn g64(d: &[u8]) -> FileInfo {
@@ -466,6 +544,41 @@ mod tests {
     }
 
     #[test]
+    fn eine_programmdatei_aus_der_diskette() {
+        // Eine Datei über zwei Sektoren: 17/0 → 17/1 (letzter, 3 Byte belegt).
+        let mut img = testdata::d64(b"X", &[(b"GAME", 0x82, 2), (b"----", 0x80, 0)]);
+        let a = offset_1541(17, 0).unwrap();
+        img[a] = 17;
+        img[a + 1] = 1;
+        img[a + 2] = 0x01;
+        img[a + 3] = 0x08;
+        for i in 4..256 {
+            img[a + i] = i as u8;
+        }
+        let b = offset_1541(17, 1).unwrap();
+        img[b + 1] = 4; // letztes benutztes Byte
+        img[b + 2..b + 5].copy_from_slice(&[0xAA, 0xBB, 0xCC]);
+        let DiskProgram::One(prg) = disk_program("D64", &img) else {
+            panic!("eine Datei erwartet");
+        };
+        assert_eq!(prg.len(), 254 + 3);
+        assert_eq!(&prg[..2], &[0x01, 0x08]);
+        assert_eq!(&prg[254..], &[0xAA, 0xBB, 0xCC]);
+
+        let several = testdata::d64(b"X", &[(b"LOADER", 0x82, 1), (b"PART2", 0x82, 9)]);
+        assert_eq!(disk_program("D64", &several), DiskProgram::Several(2));
+        let seq = testdata::d64(b"X", &[(b"TEXT", 0x81, 1)]);
+        assert_eq!(disk_program("D64", &seq), DiskProgram::NoProgram);
+        let open = testdata::d64(b"X", &[(b"OPEN", 0x02, 1)]);
+        assert_eq!(disk_program("D64", &open), DiskProgram::NoProgram);
+        assert_eq!(disk_program("D64", &[0u8; 100]), DiskProgram::Damaged);
+        // Sektorkette, die auf sich selbst zeigt.
+        img[b] = 17;
+        img[b + 1] = 0;
+        assert_eq!(disk_program("D64", &img), DiskProgram::Damaged);
+    }
+
+    #[test]
     fn kaputte_dateien() {
         for f in [
             "PRG", "P00", "CRT", "D64", "D71", "D81", "G64", "T64", "TAP",
@@ -497,9 +610,10 @@ mod tests {
 
     #[test]
     fn prg_und_endungen() {
+        assert_eq!(analyze("PRG", &[0x01, 0x08, 0]).detail, None);
         assert_eq!(
-            analyze("PRG", &[0x01, 0x08, 0]).detail.as_deref(),
-            Some("Ladeadresse $0801")
+            analyze("PRG", &[0x00, 0xC0, 0]).detail.as_deref(),
+            Some("Ladeadresse $C000")
         );
         assert_eq!(format_for_ext("D64"), Some("D64"));
         assert_eq!(format_for_ext("txt"), None);

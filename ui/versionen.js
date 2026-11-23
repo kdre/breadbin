@@ -2,6 +2,15 @@
 // Neue Fassung oben anfügen: { v, date, de: [...], en: [...] }.
 const VERSIONS = [
   {
+    v: "0.9.4", date: "2026-11-23",
+    de: ["BMC64 (Raspberry Pi) als Gerät", "TeensyROM als Gerät (ungetestet)", "Mehrere Emulatoren, auch Denise",
+      "REU-Abbild beim Start mitladen", "Scan meldet neue und fehlende Dateien", "Liste ohne 1000er-Grenze",
+      "Bis zu vier Spielszenen, Emulator-Optionen je Spiel"],
+    en: ["BMC64 (Raspberry Pi) as a device", "TeensyROM as a device (untested)", "Several emulators, Denise too",
+      "Preload a REU image on start", "Scan reports new and missing files", "List without the 1,000 limit",
+      "Up to four in-game pictures, emulator options per game"],
+  },
+  {
     v: "0.9.3", date: "2026-11-20",
     de: ["Neue Fassung: Prüfung alle 6 Stunden", "Knopf „Nach neuer Fassung suchen“", "Versionsverlauf hier im Dialog"],
     en: ["New version: checked every 6 hours", "“Check for a new version” button", "Version history in this dialog"],

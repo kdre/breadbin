@@ -125,7 +125,7 @@ pub fn wake_and_wait(
 pub fn can_power_off(product: &str) -> bool {
     let p = product.to_lowercase();
     (p.contains("ultimate 64") || p.contains("ultimate-64") || p.contains("c64 ultimate"))
-        && !p.contains("ii+")
+        && !crate::launch::is_cartridge_ultimate(product)
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -189,6 +189,8 @@ pub struct Found {
     pub ethernet_mac: String,
     /// Weitere Adressen desselben Geräts (LAN und WLAN), beim Entdoppeln gesammelt.
     pub other_hosts: Vec<String>,
+    /// Geräteart: `ultimate` oder `bmc64`.
+    pub kind: String,
 }
 
 /// Eigene IPv4-Adresse im lokalen Netz (ohne Pakete zu senden).
@@ -201,21 +203,29 @@ pub fn local_ipv4() -> Option<Ipv4Addr> {
     }
 }
 
-fn info_json(host: &str) -> Option<serde_json::Value> {
+/// Was antwortet unter `host`? Ultimate: dessen `/v1/info`; BMC64: Angaben aus `/api/status`.
+/// `None`, wenn dort kein Webserver läuft oder er zu keinem der beiden gehört.
+enum Answer {
+    Ultimate(serde_json::Value),
+    Bmc64(crate::bmc64::Status),
+}
+
+fn identify(host: &str) -> Option<Answer> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_millis(1500)))
         .build()
         .into();
+    // Ohne Webserver gar nicht erst weiterfragen (die meisten Adressen im Netz).
     let body = agent
         .get(format!("http://{host}/v1/version"))
         .call()
         .ok()?
         .body_mut()
         .read_to_string()
-        .ok()?;
+        .unwrap_or_default();
     if !looks_like_ultimate(&body) {
-        return None;
+        return crate::bmc64::quick_status(host, "").map(Answer::Bmc64);
     }
     let info = agent
         .get(format!("http://{host}/v1/info"))
@@ -224,11 +234,13 @@ fn info_json(host: &str) -> Option<serde_json::Value> {
         .body_mut()
         .read_to_string()
         .ok()?;
-    Some(serde_json::from_str(&info).unwrap_or(serde_json::Value::Null))
+    Some(Answer::Ultimate(
+        serde_json::from_str(&info).unwrap_or(serde_json::Value::Null),
+    ))
 }
 
-/// Sucht im eigenen /24-Netz nach Ultimate-Geräten (bis zu 64 gleichzeitige Anfragen).
-/// Geräte mit Netzwerk-Passwort antworten nicht und werden nicht gefunden.
+/// Sucht im eigenen /24-Netz nach Ultimate-Geräten und BMC64 (bis zu 64 gleichzeitige Anfragen).
+/// Ultimates mit Netzwerk-Passwort antworten nicht und werden nicht gefunden; ein BMC64 mit PIN schon.
 pub fn discover() -> Result<Vec<Found>> {
     let me = local_ipv4().ok_or_else(|| {
         anyhow!(tr!(
@@ -247,20 +259,35 @@ pub fn discover() -> Result<Vec<Found>> {
             let found = &found;
             s.spawn(move || {
                 for h in chunk {
-                    if let Some(v) = info_json(h) {
-                        let t = |k: &str| v[k].as_str().unwrap_or("").to_string();
-                        found.lock().unwrap().push(Found {
+                    match identify(h) {
+                        Some(Answer::Bmc64(st)) => found.lock().unwrap().push(Found {
                             host: h.clone(),
-                            product: Some(t("product"))
-                                .filter(|p| !p.is_empty())
-                                .unwrap_or_else(|| "Ultimate".into()),
-                            hostname: t("hostname"),
-                            firmware: t("firmware_version"),
-                            unique_id: t("unique_id"),
-                            wifi_mac: normalize_mac(&t("wifi_mac")).unwrap_or_default(),
-                            ethernet_mac: normalize_mac(&t("ethernet_mac")).unwrap_or_default(),
+                            product: st.product(),
+                            hostname: "bmc64".into(),
+                            firmware: st.version,
+                            unique_id: String::new(),
+                            wifi_mac: String::new(),
+                            ethernet_mac: String::new(),
                             other_hosts: Vec::new(),
-                        });
+                            kind: crate::remote::BMC64.into(),
+                        }),
+                        Some(Answer::Ultimate(v)) => {
+                            let t = |k: &str| v[k].as_str().unwrap_or("").to_string();
+                            found.lock().unwrap().push(Found {
+                                host: h.clone(),
+                                product: Some(t("product"))
+                                    .filter(|p| !p.is_empty())
+                                    .unwrap_or_else(|| "Ultimate".into()),
+                                hostname: t("hostname"),
+                                firmware: t("firmware_version"),
+                                unique_id: t("unique_id"),
+                                wifi_mac: normalize_mac(&t("wifi_mac")).unwrap_or_default(),
+                                ethernet_mac: normalize_mac(&t("ethernet_mac")).unwrap_or_default(),
+                                other_hosts: Vec::new(),
+                                kind: crate::remote::ULTIMATE.into(),
+                            });
+                        }
+                        None => {}
                     }
                 }
             });
@@ -434,6 +461,7 @@ mod tests {
             wifi_mac: String::new(),
             ethernet_mac: "02:15:41:00:00:01".into(),
             other_hosts: Vec::new(),
+            kind: "ultimate".into(),
         };
         let mut list = vec![f("192.0.2.103"), f("192.0.2.246")];
         fill_wifi_macs(&mut list, |ip| {
@@ -507,5 +535,7 @@ mod tests {
         assert!(can_power_off("C64 Ultimate"));
         assert!(!can_power_off("Ultimate-II+"));
         assert!(!can_power_off("1541 Ultimate-II+"));
+        assert!(!can_power_off("Ultimate II+L"));
+        assert!(can_power_off("Ultimate 64 Elite"));
     }
 }

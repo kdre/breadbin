@@ -1,5 +1,8 @@
-//! Spiele auf einem Ultimate-Gerät starten (Ultimate 64, C64 Ultimate, 1541 Ultimate II+).
+//! Spiele auf einem Gerät starten: Ultimate (Ultimate 64, C64 Ultimate, 1541 Ultimate II+) oder
+//! BMC64 auf dem Raspberry Pi (Upload und Autostart über dessen Weboberfläche, siehe `bmc64.rs`)
+//! oder TeensyROM (Fernsteuer-Protokoll über TCP 2112, siehe `teensyrom.rs`, ungetestet).
 //!
+//! Ultimate:
 //! - PRG: `runners:run_prg`, CRT: `runners:run_crt` – jeweils mit Datei auf dem Gerät.
 //! - Disk-Abbilder: in Laufwerk A einlegen, dann den Breadbin-Lader starten, der wie
 //!   `LOAD"*",8,1` und `RUN` arbeitet (Quelltext: `core/c64/lader.asm`).
@@ -18,8 +21,11 @@ use std::io::{Cursor, Read};
 use std::path::Path;
 use std::time::Duration;
 
+use crate::bmc64::{self, Bmc64};
 use crate::db;
 use crate::ftp::{self, Ftp};
+use crate::remote::{self, Remote};
+use crate::teensyrom::{self, TeensyRom};
 
 /// Der Lader als fertiges PRG (gebaut mit 64tass aus `core/c64/lader.asm`).
 pub const LADER_PRG: &[u8] = include_bytes!("../c64/lader.prg");
@@ -37,13 +43,30 @@ pub struct Device {
     /// WLAN-MAC zum Einschalten per Wake-on-WiFi, leer wenn unbekannt.
     #[serde(default)]
     pub wifi_mac: String,
+    /// Geräteart: `ultimate`, `bmc64` oder `teensyrom`.
+    #[serde(default = "default_kind")]
+    pub kind: String,
+}
+
+fn default_kind() -> String {
+    remote::ULTIMATE.into()
+}
+
+impl Device {
+    pub fn is_bmc64(&self) -> bool {
+        self.kind == remote::BMC64
+    }
+
+    pub fn is_teensyrom(&self) -> bool {
+        self.kind == remote::TEENSYROM
+    }
 }
 
 // ---------------------------------------------------------------- Geräteliste
 
 pub fn list_devices(conn: &Connection) -> Result<Vec<Device>> {
     let mut st = conn.prepare(
-        "SELECT id, name, host, product, upload_dir, wifi_mac FROM devices ORDER BY name COLLATE NOCASE",
+        "SELECT id, name, host, product, upload_dir, wifi_mac, kind FROM devices ORDER BY name COLLATE NOCASE",
     )?;
     let rows = st.query_map([], |r| {
         Ok(Device {
@@ -53,6 +76,7 @@ pub fn list_devices(conn: &Connection) -> Result<Vec<Device>> {
             product: r.get(3)?,
             upload_dir: r.get(4)?,
             wifi_mac: r.get(5)?,
+            kind: r.get(6)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -67,15 +91,17 @@ pub fn get_device(conn: &Connection, id: i64) -> Result<Device> {
 
 pub fn save_device(conn: &Connection, d: &Device) -> Result<i64> {
     let upload_dir = format!("/{}", d.upload_dir.trim().trim_matches('/'));
+    let kind = remote::kind_of(&d.kind);
     if d.id > 0 {
         conn.execute(
-            "UPDATE devices SET name = ?, host = ?, product = ?, upload_dir = ?,
+            "UPDATE devices SET name = ?, host = ?, product = ?, upload_dir = ?, kind = ?,
                     wifi_mac = CASE WHEN ? = '' THEN wifi_mac ELSE ? END WHERE id = ?",
             params![
                 d.name.trim(),
                 d.host.trim(),
                 d.product,
                 upload_dir,
+                kind,
                 d.wifi_mac,
                 d.wifi_mac,
                 d.id
@@ -94,13 +120,14 @@ pub fn save_device(conn: &Connection, d: &Device) -> Result<i64> {
         return Ok(id);
     }
     conn.execute(
-        "INSERT INTO devices(name, host, product, upload_dir, wifi_mac) VALUES(?, ?, ?, ?, ?)",
+        "INSERT INTO devices(name, host, product, upload_dir, wifi_mac, kind) VALUES(?, ?, ?, ?, ?, ?)",
         params![
             d.name.trim(),
             d.host.trim(),
             d.product,
             upload_dir,
-            d.wifi_mac
+            d.wifi_mac,
+            kind
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -128,6 +155,8 @@ pub struct DeviceInfo {
     pub wifi_mac: String,
     /// Laufwerke laut FTP (z. B. `USB0`, `SD`), für den Vorschlag des Startordners.
     pub drives: Vec<String>,
+    /// Geräteart: `ultimate` oder `bmc64`.
+    pub kind: String,
 }
 
 impl Rest {
@@ -242,6 +271,7 @@ impl Rest {
             hostname: v["hostname"].as_str().unwrap_or("").to_string(),
             wifi_mac: v["wifi_mac"].as_str().unwrap_or("").to_string(),
             drives: Vec::new(),
+            kind: remote::ULTIMATE.into(),
         })
     }
 
@@ -281,6 +311,50 @@ impl Rest {
         .unwrap_or_default()
     }
 
+    /// Werte einer Einstellungs-Kategorie (z. B. „C64 and Cartridge Settings“).
+    pub fn config(&self, category: &str) -> Result<Value> {
+        let v = self.call("GET", &format!("configs/{}", urlenc(category)), &[])?;
+        Ok(v[category].clone())
+    }
+
+    /// Eine Einstellung setzen – nur im RAM, nicht ins Flash (nach dem Ausschalten gilt der alte Wert).
+    pub fn set_config(&self, category: &str, item: &str, value: &str) -> Result<()> {
+        self.call(
+            "PUT",
+            &format!("configs/{}/{}", urlenc(category), urlenc(item)),
+            &[("value", value)],
+        )
+        .map(|_| ())
+    }
+
+    /// Speicher des C64 lesen (DMA). Die Antwort ist binär, nicht JSON.
+    pub fn readmem(&self, address: u16, length: u16) -> Result<Vec<u8>> {
+        let url = format!("{}/machine:readmem", self.base);
+        let mut req = self
+            .agent
+            .get(&url)
+            .query("address", format!("{address:04X}"))
+            .query("length", length.to_string());
+        if !self.password.is_empty() {
+            req = req.header("X-Password", &self.password);
+        }
+        let mut resp = req.call().map_err(|e| {
+            anyhow!(tr!(
+                "Gerät {} antwortet nicht: {e}",
+                "Device {} does not answer: {e}",
+                self.host
+            ))
+        })?;
+        if resp.status().as_u16() != 200 {
+            bail!(tr!(
+                "Gerät meldet: Fehler {}",
+                "Device reports: error {}",
+                resp.status().as_u16()
+            ));
+        }
+        Ok(resp.body_mut().read_to_vec()?)
+    }
+
     pub fn mount(&self, path: &str, kind: &str) -> Result<()> {
         self.call(
             "PUT",
@@ -289,6 +363,26 @@ impl Rest {
         )
         .map(|_| ())
     }
+}
+
+/// Teil einer REST-Adresse kodieren (Leerzeichen und Sonderzeichen in Einstellungsnamen).
+fn urlenc(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Steck-Ultimate (1541 Ultimate II, II+, II+L) statt Ultimate 64 / C64 Ultimate? Die Firmware meldet
+/// „Ultimate II“, „Ultimate II+“, „Ultimate II+L“ (Rechnername „Ultimate-IIp“ …), die Ultimate 64
+/// dagegen „Ultimate 64“, „Ultimate 64 Elite“, „Ultimate 64-II“. Ohne Videostrom, Tasten und Ausschalten.
+pub fn is_cartridge_ultimate(product: &str) -> bool {
+    let p = product.to_ascii_lowercase().replace('-', " ");
+    p.contains("1541") || (p.contains("ultimate ii") && !p.contains("64"))
 }
 
 /// Hinweise zu einem Gerät aus Typ, Firmware und KERNAL: was damit nicht geht.
@@ -308,10 +402,10 @@ pub fn device_hints(product: &str, firmware: &str, kernal: &str) -> Vec<String> 
             "Firmware {firmware} is older than 3.11: launching from Breadbin needs the REST interface (3.11 and later) – please update the firmware."
         ));
     }
-    if product.contains("1541") || product.contains("II+") {
+    if is_cartridge_ultimate(product) {
         out.push(tr!(
-            "Bildschirmfotos gehen nur mit Ultimate 64 und C64 Ultimate.",
-            "Screenshots only work with Ultimate 64 and C64 Ultimate."
+            "1541 Ultimate II/II+: mit Breadbin noch ungetestet – Starten, Einlegen, Kopieren und Spielstände sollten gehen. Bildschirmfotos, automatisches Titelbild und Ausschalten gibt es nur mit Ultimate 64 und C64 Ultimate.",
+            "1541 Ultimate II/II+: not yet tested with Breadbin – launching, inserting, copying and saved games should work. Screenshots, automatic title pictures and powering off are only available with Ultimate 64 and C64 Ultimate."
         ));
     }
     if kernal.to_ascii_lowercase().contains("jiffy") {
@@ -323,8 +417,30 @@ pub fn device_hints(product: &str, firmware: &str, kernal: &str) -> Vec<String> 
     out
 }
 
-/// Fragt ein Gerät ab: REST für Typ und Firmware, FTP für die Laufwerke.
+/// Fragt ein Gerät ab: erst, ob es ein TeensyROM (TCP 2112) oder BMC64 ist; sonst beim Ultimate REST
+/// für Typ und Firmware, FTP für die Laufwerke.
 pub fn probe(host: &str, password: &str) -> Result<DeviceInfo> {
+    // Zuerst TeensyROM: der hat keinen Webserver, die BMC64-Abfrage scheiterte sonst an ihm.
+    if let Some(st) = teensyrom::detect(host) {
+        return Ok(DeviceInfo {
+            product: st.product.clone(),
+            firmware: st.version.clone(),
+            hostname: "teensyrom".into(),
+            wifi_mac: String::new(),
+            drives: TeensyRom::new(host).volumes().unwrap_or_default(),
+            kind: remote::TEENSYROM.into(),
+        });
+    }
+    if let Some(st) = bmc64::detect(host, password)? {
+        return Ok(DeviceInfo {
+            product: st.product(),
+            firmware: st.version.clone(),
+            hostname: "bmc64".into(),
+            wifi_mac: String::new(),
+            drives: Bmc64::new(host, password).volumes()?,
+            kind: remote::BMC64.into(),
+        });
+    }
     let mut info = Rest::new(host, password).info().map_err(|e| {
         if crate::i18n::is_unreachable(&e.to_string()) {
             e
@@ -421,9 +537,7 @@ pub(crate) fn read_location(
     password_for: &dyn Fn(&str) -> String,
 ) -> Result<Vec<u8>> {
     let raw = if loc.source_kind == "ultimate" {
-        let (host, root) = ftp::split_location(&loc.source_location)
-            .context(tr!("Geräteort ungültig", "Invalid device location"))?;
-        let mut f = Ftp::connect(host, &password_for(host))?;
+        let (mut f, _, root) = Remote::for_location(&loc.source_location, password_for)?;
         let limit = if loc.member.is_empty() {
             MAX_FILE
         } else {
@@ -493,8 +607,10 @@ pub fn is_breadbin_file(name: &str) -> bool {
     let Some((_, hash)) = stem.rsplit_once('_') else {
         return false;
     };
-    matches!(ext, "prg" | "crt" | "d64" | "d71" | "d81" | "g64")
-        && hash.len() == 8
+    matches!(
+        ext,
+        "prg" | "crt" | "d64" | "d71" | "d81" | "g64" | "t64" | "p00" | "tap"
+    ) && hash.len() == 8
         && hash
             .chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
@@ -505,7 +621,7 @@ pub fn is_breadbin_file(name: &str) -> bool {
 /// Gibt (gelöscht, übrig gelassen) zurück.
 pub fn clean_upload_dir(dev: &Device, password: &str) -> Result<(usize, usize)> {
     let dir = format!("/{}", dev.upload_dir.trim().trim_matches('/'));
-    let mut f = Ftp::connect(&dev.host, password)?;
+    let mut f = connect(dev, password)?;
     if !f.is_dir(&dir)? {
         f.quit();
         return Ok((0, 0));
@@ -531,9 +647,14 @@ pub fn clean_upload_dir(dev: &Device, password: &str) -> Result<(usize, usize)> 
     Ok((ours.len(), others.len()))
 }
 
+/// Verbindung zum Gerät (FTP beim Ultimate, HTTP bei BMC64).
+pub fn connect(dev: &Device, password: &str) -> Result<Remote> {
+    Remote::connect(&dev.kind, &dev.host, password)
+}
+
 /// Legt einen Ordner auf dem Gerät Stück für Stück an (MKD legt nur eine Ebene an). Die erste Ebene
 /// ist das Laufwerk und muss es geben.
-fn make_dirs(f: &mut Ftp, dir: &str) -> Result<()> {
+fn make_dirs(f: &mut Remote, dir: &str) -> Result<()> {
     let mut path = String::new();
     for part in dir.split('/').filter(|p| !p.is_empty()) {
         path.push('/');
@@ -598,7 +719,7 @@ pub fn copy_to_device(
     target_dir: &str,
 ) -> Result<CopyReport> {
     let dir = format!("/{}", target_dir.trim().trim_matches('/'));
-    let mut f = Ftp::connect(&dev.host, device_password)?;
+    let mut f = connect(dev, device_password)?;
     make_dirs(&mut f, &dir)?;
     let mut existing: Vec<(String, u64)> = f
         .list(&dir)?
@@ -691,7 +812,7 @@ pub struct ChangedDisk {
 const DISK_EXTS: [&str; 4] = ["d64", "d71", "d81", "g64"];
 
 /// Lädt die Disk-Abbilder, die Breadbin in den Startordner kopiert hat, und gibt die geänderten zurück.
-fn changed_disks_in(f: &mut Ftp, dir: &str) -> Result<Vec<ChangedDisk>> {
+fn changed_disks_in(f: &mut Remote, dir: &str) -> Result<Vec<ChangedDisk>> {
     use sha1::Digest;
     if !f.is_dir(dir)? {
         return Ok(Vec::new());
@@ -732,7 +853,7 @@ fn changed_disks_in(f: &mut Ftp, dir: &str) -> Result<Vec<ChangedDisk>> {
 /// Geänderte Disketten (Spielstände) im Startordner des Geräts.
 pub fn changed_disks(dev: &Device, password: &str) -> Result<Vec<ChangedDisk>> {
     let dir = format!("/{}", dev.upload_dir.trim().trim_matches('/'));
-    let mut f = Ftp::connect(&dev.host, password)?;
+    let mut f = connect(dev, password)?;
     let out = changed_disks_in(&mut f, &dir);
     f.quit();
     out
@@ -819,6 +940,12 @@ pub fn launch(
     insert_only: bool,
 ) -> Result<LaunchResult> {
     let d = db::details(conn, sha1)?;
+    if dev.is_bmc64() {
+        return launch_bmc64(&d, sha1, dev, device_password, password_for, insert_only);
+    }
+    if dev.is_teensyrom() {
+        return launch_teensyrom(&d, sha1, dev, password_for, insert_only);
+    }
     let format = d.row.format.as_str();
     let (run_ext, disk_type) = match format {
         "PRG" | "P00" | "T64" => ("prg", None),
@@ -906,6 +1033,30 @@ pub fn launch(
         }
     };
 
+    // REU-Abbild neben der Startdatei: vor dem Start ins REU laden; sonst gemerkte Einstellungen
+    // eines früheren REU-Starts auf diesem Gerät wiederherstellen.
+    let mut reu_note = String::new();
+    if !insert_only {
+        match crate::reu::find(&d, true, password_for) {
+            Some(comp) => {
+                ftp(&mut ftp_conn)?;
+                let f = ftp_conn.as_mut().unwrap();
+                reu_note = prepare_reu(
+                    conn,
+                    &rest,
+                    f,
+                    dev,
+                    &upload_dir,
+                    &d.row.title,
+                    sha1,
+                    &comp,
+                    password_for,
+                )?;
+            }
+            None => restore_reu_settings(conn, &rest, &dev.host),
+        }
+    }
+
     let message = match disk_type {
         None if run_ext == "crt" => {
             rest.run_crt(&device_path)?;
@@ -943,10 +1094,371 @@ pub fn launch(
     if let Some(f) = ftp_conn {
         f.quit();
     }
+    let message = message + &reu_note;
     Ok(LaunchResult {
         message,
         device_path,
         copied,
+    })
+}
+
+const REU_CATEGORY: &str = "C64 and Cartridge Settings";
+
+/// REU-Abbild auf den Stick bringen, REU einschalten und per Lader füllen. Gibt einen Zusatz für die
+/// Meldung zurück.
+#[allow(clippy::too_many_arguments)]
+fn prepare_reu(
+    conn: &Connection,
+    rest: &Rest,
+    f: &mut Ftp,
+    dev: &Device,
+    upload_dir: &str,
+    title: &str,
+    sha1: &str,
+    comp: &crate::reu::Companion,
+    password_for: &dyn Fn(&str) -> String,
+) -> Result<String> {
+    use crate::reu::{self, Companion};
+    let size = comp.size();
+    // Liegt die Datei schon auf diesem Gerät, nimmt der Lader sie von dort.
+    let on_device = match comp {
+        Companion::Remote { location, path, .. } => ftp::split_location(location)
+            .filter(|(h, _)| h.eq_ignore_ascii_case(dev.host.trim()))
+            .map(|_| path.clone()),
+        Companion::Local { .. } => None,
+    };
+    let reu_path = match on_device {
+        Some(p) => p,
+        None => {
+            let name = device_file_name(title, sha1, "reu");
+            let path = format!("{upload_dir}/{name}");
+            let present = f
+                .list(upload_dir)
+                .unwrap_or_default()
+                .iter()
+                .any(|e| e.name == name && e.size == size);
+            if !present {
+                let data = comp.read(password_for)?;
+                f.store(&path, &data)?;
+            }
+            path
+        }
+    };
+
+    // Einstellungen merken (nur beim ersten REU-Start; sonst bleiben die ursprünglichen gemerkt).
+    let cfg = rest.config(REU_CATEGORY)?;
+    let key = reu::restore_key(&dev.host);
+    if db::get_setting(conn, &key)?.is_none() {
+        let mut old = serde_json::Map::new();
+        for item in reu::ULTIMATE_ITEMS {
+            if let Some(v) = cfg[item].as_str() {
+                old.insert(item.to_string(), Value::String(v.to_string()));
+            }
+        }
+        db::set_setting(conn, &key, &Value::Object(old).to_string())?;
+    }
+    let kb = reu::size_kb(size);
+    let want = [
+        ("RAM Expansion Unit", "Enabled".to_string()),
+        ("REU Size", reu::ultimate_size_value(kb)),
+        ("Command Interface", "Enabled".to_string()),
+    ];
+    for (item, value) in &want {
+        if cfg[*item].as_str() != Some(value.as_str()) {
+            rest.set_config(REU_CATEGORY, item, value)?;
+        }
+    }
+
+    // Lader hochladen, starten und auf die Marke warten.
+    let lader = format!("{upload_dir}/{}", reu::REU_LADER_NAME);
+    f.store(&lader, &reu::loader(&reu_path, size)?)?;
+    rest.run_prg(&lader)?;
+    let start = std::time::Instant::now();
+    let mark = loop {
+        std::thread::sleep(Duration::from_millis(1000));
+        let m = rest
+            .readmem(0x02A7, 1)
+            .ok()
+            .and_then(|v| v.first().copied())
+            .unwrap_or(0);
+        if matches!(m, 0xA5 | 0xE0 | 0xE1 | 0xE2) {
+            break m;
+        }
+        if start.elapsed() > Duration::from_secs(150) {
+            break 0;
+        }
+    };
+    match mark {
+        0xA5 => Ok(tr!(
+            " REU-Abbild geladen ({kb} KB).",
+            " REU image loaded ({kb} KB)."
+        )),
+        0xE0 => bail!(tr!(
+            "REU-Abbild nicht geladen: Das Command Interface des Ultimate ist aus.",
+            "REU image not loaded: the Ultimate's Command Interface is off."
+        )),
+        0xE1 => bail!(tr!(
+            "REU-Abbild nicht geladen: Der Ultimate findet {reu_path} nicht.",
+            "REU image not loaded: the Ultimate cannot find {reu_path}."
+        )),
+        0xE2 => bail!(tr!(
+            "REU-Abbild nicht geladen: Laden ins REU gescheitert.",
+            "REU image not loaded: loading into the REU failed."
+        )),
+        _ => bail!(tr!(
+            "REU-Abbild nicht geladen: keine Rückmeldung vom Lader.",
+            "REU image not loaded: no answer from the loader."
+        )),
+    }
+}
+
+/// Einstellungen eines früheren REU-Starts auf diesem Gerät zurückstellen (Fehler werden übergangen –
+/// spätestens nach dem Aus- und Einschalten gelten ohnehin die gespeicherten Werte).
+fn restore_reu_settings(conn: &Connection, rest: &Rest, host: &str) {
+    let key = crate::reu::restore_key(host);
+    let Ok(Some(saved)) = db::get_setting(conn, &key) else {
+        return;
+    };
+    let old: Value = serde_json::from_str(&saved).unwrap_or(Value::Null);
+    let cfg = rest.config(REU_CATEGORY).unwrap_or(Value::Null);
+    let mut ok = true;
+    // Reihenfolge wie beim Einschalten umgekehrt: erst Größe, dann REU und Command Interface.
+    for item in ["REU Size", "RAM Expansion Unit", "Command Interface"] {
+        if let Some(v) = old[item].as_str()
+            && cfg[item].as_str() != Some(v)
+        {
+            ok &= rest.set_config(REU_CATEGORY, item, v).is_ok();
+        }
+    }
+    if ok {
+        let _ = conn.execute("DELETE FROM settings WHERE key = ?", [&key]);
+    }
+}
+
+/// Start auf BMC64: Datei in den Startordner hochladen (falls sie nicht schon auf dem Gerät liegt)
+/// und per Autostart starten. BMC64 startet PRG, P00, T64, TAP, CRT und Disk-Abbilder selbst.
+fn launch_bmc64(
+    d: &db::Details,
+    sha1: &str,
+    dev: &Device,
+    password: &str,
+    password_for: &dyn Fn(&str) -> String,
+    insert_only: bool,
+) -> Result<LaunchResult> {
+    if insert_only {
+        bail!(tr!(
+            "BMC64 kann keine Diskette ohne Neustart wechseln – bitte „Starten“ nehmen oder im BMC64-Menü wechseln.",
+            "BMC64 cannot swap disks without a restart – please use “Launch” or swap in the BMC64 menu."
+        ));
+    }
+    let format = d.row.format.as_str();
+    let ext = match format {
+        "PRG" | "P00" | "T64" | "TAP" | "CRT" | "D64" | "D71" | "D81" | "G64" => {
+            format.to_ascii_lowercase()
+        }
+        other => bail!(tr!(
+            "Format {other} lässt sich nicht starten.",
+            "Format {other} cannot be launched."
+        )),
+    };
+    let client = Bmc64::new(&dev.host, password);
+    let st = client.status()?;
+    if !st.run.is_empty() && !st.run.contains(&ext) {
+        bail!(tr!(
+            "BMC64 läuft gerade als {} und kann {format} nicht starten.",
+            "BMC64 is currently running as {} and cannot launch {format}.",
+            st.machine
+        ));
+    }
+
+    // Liegt die Datei schon unverändert auf diesem Gerät?
+    let on_device = d.locations.iter().find_map(|l| {
+        let (host, root) = ftp::split_location(&l.source_location)?;
+        (l.source_kind == "ultimate"
+            && remote::location_kind(&l.source_location) == remote::BMC64
+            && host.eq_ignore_ascii_case(dev.host.trim())
+            && l.member.is_empty())
+        .then(|| format!("{}/{}", root.trim_end_matches('/'), l.path))
+    });
+    let (device_path, copied) = match on_device {
+        Some(p) => (p, false),
+        None => {
+            let loc = d
+                .locations
+                .iter()
+                .find(|l| l.source_kind == "local")
+                .or_else(|| d.locations.first())
+                .context(tr!(
+                    "Für diesen Eintrag ist kein Speicherort bekannt",
+                    "No storage location is known for this entry"
+                ))?;
+            let data = read_location(loc, password_for)?;
+            let upload_dir = format!("/{}", dev.upload_dir.trim().trim_matches('/'));
+            let mut r = Remote::Bmc64(Bmc64::new(&dev.host, password));
+            make_dirs(&mut r, &upload_dir).map_err(|e| {
+                e.context(tr!(
+                    "Startordner in den Geräte-Einstellungen prüfen",
+                    "Check the launch folder in the device settings"
+                ))
+            })?;
+            let path = format!(
+                "{upload_dir}/{}",
+                device_file_name(&d.row.title, sha1, &ext)
+            );
+            client.upload(&path, &data)?;
+            (path, true)
+        }
+    };
+    client.autostart(&device_path)?;
+    let message = if format == "CRT" {
+        tr!(
+            "Modul eingelegt und gestartet: {device_path}",
+            "Cartridge inserted and started: {device_path}"
+        )
+    } else {
+        tr!("Gestartet: {device_path}", "Started: {device_path}")
+    };
+    Ok(LaunchResult {
+        message,
+        device_path,
+        copied,
+    })
+}
+
+/// Start auf dem TeensyROM (ungetestet): Datei in den Startordner hochladen und starten.
+///
+/// Der TeensyROM lädt nur einzelne Dateien (PRG/P00, CRT). T64 wird zum PRG (erstes Programm), ein
+/// D64/D71/D81 nur, wenn es genau eine Programmdatei enthält – die geht dann als PRG hinüber. Läuft
+/// gerade ein Programm, lehnt der TeensyROM das Hochladen ab („Busy!“): dann zurücksetzen, aufs Menü
+/// warten und noch einmal.
+fn launch_teensyrom(
+    d: &db::Details,
+    sha1: &str,
+    dev: &Device,
+    password_for: &dyn Fn(&str) -> String,
+    insert_only: bool,
+) -> Result<LaunchResult> {
+    if insert_only {
+        bail!(tr!(
+            "TeensyROM kann keine Diskette einlegen – er lädt nur einzelne Dateien.",
+            "TeensyROM cannot insert disks – it only loads single files."
+        ));
+    }
+    let format = d.row.format.as_str();
+    let run_ext = match format {
+        "PRG" | "P00" | "T64" | "D64" | "D71" | "D81" => "prg",
+        "CRT" => "crt",
+        "TAP" | "G64" => bail!(tr!(
+            "TeensyROM kann {format} nicht starten (nur PRG, P00, T64, CRT und Disketten mit einer Programmdatei).",
+            "TeensyROM cannot launch {format} (only PRG, P00, T64, CRT and disks with a single program file)."
+        )),
+        other => bail!(tr!(
+            "Format {other} lässt sich nicht starten.",
+            "Format {other} cannot be launched."
+        )),
+    };
+    let client = TeensyRom::new(&dev.host);
+    let upload_dir = format!("/{}", dev.upload_dir.trim().trim_matches('/'));
+
+    // Liegt die Datei schon unverändert auf diesem Gerät (PRG, P00, CRT startet er von dort)?
+    let on_device = d.locations.iter().find_map(|l| {
+        let (host, root) = ftp::split_location(&l.source_location)?;
+        (l.source_kind == "ultimate"
+            && remote::location_kind(&l.source_location) == remote::TEENSYROM
+            && host.eq_ignore_ascii_case(dev.host.trim())
+            && l.member.is_empty()
+            && matches!(format, "PRG" | "P00" | "CRT"))
+        .then(|| format!("{}/{}", root.trim_end_matches('/'), l.path))
+    });
+    let (device_path, copied) = match on_device {
+        Some(p) => (p, false),
+        None => {
+            let loc = d
+                .locations
+                .iter()
+                .find(|l| l.source_kind == "local")
+                .or_else(|| d.locations.first())
+                .context(tr!(
+                    "Für diesen Eintrag ist kein Speicherort bekannt",
+                    "No storage location is known for this entry"
+                ))?;
+            let data = teensyrom_payload(format, read_location(loc, password_for)?)?;
+            if format == "CRT"
+                && data.len() > teensyrom::MAX_CRT_FROM_USB
+                && teensyrom::is_usb_path(&upload_dir)
+            {
+                bail!(tr!(
+                    "Module über 850 KB startet der TeensyROM nur von der SD-Karte – Startordner auf /SD/… stellen.",
+                    "TeensyROM only launches cartridges over 850 KB from the SD card – set the launch folder to /SD/…."
+                ));
+            }
+            let path = format!(
+                "{upload_dir}/{}",
+                device_file_name(&d.row.title, sha1, run_ext)
+            );
+            // Gleicher Name = gleicher Inhalt (Prüfsumme im Namen): vorhandene Datei einfach nehmen.
+            match client.upload(&path, &data, false) {
+                Err(e) if teensyrom::is_busy(&e) => {
+                    client.reset_and_wait()?;
+                    client.upload(&path, &data, false)?;
+                }
+                r => {
+                    r.map_err(|e| {
+                        e.context(tr!(
+                            "Hochladen auf den TeensyROM fehlgeschlagen – Startordner in den Geräte-Einstellungen prüfen",
+                            "Upload to the TeensyROM failed – check the launch folder in the device settings"
+                        ))
+                    })?;
+                }
+            }
+            (path, true)
+        }
+    };
+    client.launch(&device_path)?;
+    let message = if run_ext == "crt" {
+        tr!(
+            "Modul gestartet: {device_path}",
+            "Cartridge started: {device_path}"
+        )
+    } else if matches!(format, "D64" | "D71" | "D81") {
+        tr!(
+            "Programm der Diskette gestartet: {device_path}",
+            "Program from the disk started: {device_path}"
+        )
+    } else {
+        tr!(
+            "Programm gestartet: {device_path}",
+            "Program started: {device_path}"
+        )
+    };
+    Ok(LaunchResult {
+        message,
+        device_path,
+        copied,
+    })
+}
+
+/// Was zum TeensyROM hinübergeht: PRG aus P00/T64/Diskette, CRT unverändert.
+pub(crate) fn teensyrom_payload(format: &str, data: Vec<u8>) -> Result<Vec<u8>> {
+    use crate::formats::{DiskProgram, disk_program};
+    Ok(match format {
+        "P00" => p00_to_prg(&data)?,
+        "T64" => t64_to_prg(&data)?,
+        "D64" | "D71" | "D81" => match disk_program(format, &data) {
+            DiskProgram::One(prg) => prg,
+            DiskProgram::Several(n) => bail!(tr!(
+                "Die Diskette hat {n} Dateien – der TeensyROM lädt nur einzelne Dateien, mehrteilige Disk-Spiele gehen nicht. Eine Modul- oder PRG-Fassung nehmen.",
+                "The disk has {n} files – TeensyROM only loads single files, multi-file disk games do not work. Use a cartridge or PRG version.",
+            )),
+            DiskProgram::NoProgram => bail!(tr!(
+                "Die Diskette enthält keine startbare Programmdatei.",
+                "The disk contains no launchable program file."
+            )),
+            DiskProgram::Damaged => {
+                bail!(tr!("{format}-Datei beschädigt", "{format} file is damaged"))
+            }
+        },
+        _ => data,
     })
 }
 
@@ -972,6 +1484,30 @@ mod tests {
             1
         );
         assert_eq!(device_hints("1541 Ultimate II+", "3.12", "").len(), 1);
+        assert_eq!(device_hints("Ultimate II", "3.15a", "").len(), 1);
+    }
+
+    #[test]
+    fn steck_ultimate_erkennen() {
+        for p in [
+            "Ultimate II",
+            "Ultimate II+",
+            "Ultimate II+L",
+            "1541 Ultimate-II+",
+            "Ultimate-IIp",
+        ] {
+            assert!(is_cartridge_ultimate(p), "{p}");
+        }
+        for p in [
+            "Ultimate 64",
+            "Ultimate 64 Elite",
+            "Ultimate 64-II",
+            "C64 Ultimate",
+            "Ultimate",
+            "",
+        ] {
+            assert!(!is_cartridge_ultimate(p), "{p}");
+        }
     }
 
     #[test]
@@ -1031,6 +1567,113 @@ mod tests {
             "Großbuchstaben erzeugt Breadbin nie"
         );
         assert!(!is_breadbin_file("notiz_0123abcd.txt"));
+        assert!(
+            is_breadbin_file("Pitfall_0123abcd.tap"),
+            "BMC64 startet TAP selbst"
+        );
+    }
+
+    #[test]
+    fn auf_teensyrom_starten() {
+        use crate::formats::testdata;
+        use crate::teensyrom::mock;
+        let dir = tempfile::tempdir().unwrap();
+        let w = |name: &str, data: &[u8]| std::fs::write(dir.path().join(name), data).unwrap();
+        w("Hopper.prg", &[0x01, 0x08, 0x60]);
+        // Diskette mit genau einer Programmdatei (17/0, 3 Byte).
+        let mut one = testdata::d64(b"ONE", &[(b"ONE", 0x82, 1)]);
+        let o = 16 * 21 * 256; // Spur 17, Sektor 0
+        one[o + 1] = 4;
+        one[o + 2..o + 5].copy_from_slice(&[0x01, 0x08, 0xEA]);
+        w("One.d64", &one);
+        w(
+            "Multi.d64",
+            &testdata::d64(b"M", &[(b"LOADER", 0x82, 1), (b"LEVEL1", 0x82, 9)]),
+        );
+        w(
+            "Band.tap",
+            b"C64-TAPE-RAW\x01\0\0\0\x04\0\0\0\x30\x30\x30\x30",
+        );
+        let conn = db::open_in_memory().unwrap();
+        let id = db::add_local_source(&conn, dir.path()).unwrap();
+        crate::scan::scan_local(
+            &conn,
+            id,
+            &std::sync::atomic::AtomicBool::new(false),
+            &mut |_| {},
+        )
+        .unwrap();
+        let sha = |name: &str| -> String {
+            conn.query_row("SELECT sha1 FROM files WHERE path = ?", [name], |r| {
+                r.get(0)
+            })
+            .unwrap()
+        };
+
+        let m = mock::start();
+        m.state.lock().unwrap().busy = true; // es läuft gerade ein Spiel
+        let dev = Device {
+            id: 1,
+            name: "TR".into(),
+            host: m.addr.clone(),
+            product: "TeensyROM+".into(),
+            upload_dir: "/SD/Breadbin".into(),
+            wifi_mac: String::new(),
+            kind: remote::TEENSYROM.into(),
+        };
+        let none = |_: &str| String::new();
+        let r = launch(&conn, &sha("Hopper.prg"), &dev, "", &none, false).unwrap();
+        assert!(r.copied);
+        assert!(
+            r.device_path.starts_with("/SD/Breadbin/Hopper_"),
+            "{}",
+            r.device_path
+        );
+        {
+            let g = m.state.lock().unwrap();
+            assert_eq!(g.resets, 1, "beschäftigt → Reset, dann hochladen");
+            assert_eq!(g.launched.last().unwrap().0, 1, "Laufwerk SD");
+            assert!(
+                g.launched
+                    .last()
+                    .unwrap()
+                    .1
+                    .starts_with("/Breadbin/Hopper_")
+            );
+        }
+        // Zweiter Start: Datei liegt schon dort (gleicher Name) – kein zweites Hochladen nötig.
+        m.state.lock().unwrap().busy = false;
+        launch(&conn, &sha("Hopper.prg"), &dev, "", &none, false).unwrap();
+        assert_eq!(m.state.lock().unwrap().files.len(), 1);
+
+        let r = launch(&conn, &sha("One.d64"), &dev, "", &none, false).unwrap();
+        assert!(r.device_path.ends_with(".prg"), "{}", r.device_path);
+        let g = m.state.lock().unwrap();
+        let sent = g
+            .files
+            .iter()
+            .find(|((_, p), _)| p.contains("One_"))
+            .unwrap()
+            .1
+            .clone();
+        drop(g);
+        assert_eq!(sent, [0x01, 0x08, 0xEA]);
+
+        let e = launch(&conn, &sha("Multi.d64"), &dev, "", &none, false).unwrap_err();
+        assert!(e.to_string().contains("2 Dateien"), "{e}");
+        let e = launch(&conn, &sha("Band.tap"), &dev, "", &none, false).unwrap_err();
+        assert!(e.to_string().contains("TAP"), "{e}");
+        let e = launch(&conn, &sha("Hopper.prg"), &dev, "", &none, true).unwrap_err();
+        assert!(e.to_string().contains("einlegen"), "{e}");
+
+        // Startordner leeren geht nur im Menü (das letzte Spiel läuft noch) – dann über die
+        // gemeinsame Dateischicht.
+        let e = clean_upload_dir(&dev, "").unwrap_err();
+        assert!(crate::teensyrom::is_busy(&e), "{e}");
+        m.state.lock().unwrap().busy = false;
+        let (deleted, kept) = clean_upload_dir(&dev, "").unwrap();
+        assert_eq!((deleted, kept), (2, 0));
+        assert!(m.state.lock().unwrap().files.is_empty());
     }
 
     #[test]

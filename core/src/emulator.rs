@@ -1,4 +1,4 @@
-//! Spiele in einem Emulator auf dem Rechner starten (Standard: VICE `x64sc`).
+//! Spiele in einem Emulator auf dem Rechner starten (Standard: VICE `x64sc`, auch Denise).
 //!
 //! Breadbin legt eine Kopie des Inhalts in einen eigenen Ordner (auch aus ZIP-Archiven, von
 //! Netzlaufwerken und vom USB-Stick eines Ultimate) und ruft den Emulator mit dieser Datei auf.
@@ -17,6 +17,17 @@ use std::process::{Command, Stdio};
 
 /// Aufruf, wenn nichts anderes eingestellt ist. `{file}` wird durch den Pfad ersetzt.
 pub const DEFAULT_ARGS: &str = "-autostart {file}";
+/// Vorgabe für Denise: Abbilder als letzte Argumente startet er selbst (`LOAD"*",8,1`, PRG, CRT …).
+pub const DENISE_ARGS: &str = "{file}";
+
+/// Vorgabe-Aufruf für dieses Programm.
+pub fn default_args(emulator: &str) -> &'static str {
+    if is_denise(emulator) {
+        DENISE_ARGS
+    } else {
+        DEFAULT_ARGS
+    }
+}
 
 /// Was der Emulator starten kann. VICE kennt alle diese Formate selbst (auch P00, T64 und TAP).
 fn extension(format: &str) -> Option<&'static str> {
@@ -41,19 +52,120 @@ pub struct EmuResult {
     pub file: String,
 }
 
-/// Sieht nach, ob der Pfad nach VICE aussieht (dann gibt es die Wechselliste für mehrere Disketten).
-pub fn is_vice(path: &str) -> bool {
-    // Beide Trenner selbst behandeln: Windows-Pfade sollen auch hier erkannt werden.
+/// Höchstzahl eingestellter Emulatoren.
+pub const MAX_EMULATORS: usize = 8;
+
+/// Ein eingestellter Emulator: Programm und Aufrufzeile (leer = Vorgabe des Programms).
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct Emulator {
+    pub path: String,
+    #[serde(default)]
+    pub args: String,
+}
+
+/// Schlüssel in den Einstellungen: Nr. 1 unter den alten Namen (ältere Fassungen finden ihn so
+/// weiter), die übrigen als `emulator_path_2`, `emulator_args_2` …
+fn keys(i: usize) -> (String, String) {
+    if i == 0 {
+        ("emulator_path".into(), "emulator_args".into())
+    } else {
+        (
+            format!("emulator_path_{}", i + 1),
+            format!("emulator_args_{}", i + 1),
+        )
+    }
+}
+
+/// Alle eingestellten Emulatoren in ihrer Reihenfolge (ohne leere).
+pub fn list(conn: &Connection) -> Vec<Emulator> {
+    let get = |k: &str| db::get_setting(conn, k).ok().flatten().unwrap_or_default();
+    (0..MAX_EMULATORS)
+        .map(|i| {
+            let (p, a) = keys(i);
+            Emulator {
+                path: get(&p).trim().to_string(),
+                args: get(&a),
+            }
+        })
+        .filter(|e| !e.path.is_empty())
+        .collect()
+}
+
+/// Speichert die Liste (leere Einträge fallen weg, höchstens `MAX_EMULATORS`). Die VICE-Vorgabe
+/// wird nicht gespeichert, damit spätere Fassungen ihre eigene nehmen.
+pub fn save_list(conn: &Connection, emulators: &[Emulator]) -> Result<()> {
+    let list: Vec<&Emulator> = emulators
+        .iter()
+        .filter(|e| !e.path.trim().is_empty())
+        .take(MAX_EMULATORS)
+        .collect();
+    for i in 0..MAX_EMULATORS {
+        let (p, a) = keys(i);
+        let (path, args) = match list.get(i) {
+            Some(e) => {
+                let args = e.args.trim();
+                let args = if args == DEFAULT_ARGS || args == default_args(&e.path) {
+                    ""
+                } else {
+                    args
+                };
+                (e.path.trim(), args)
+            }
+            None => ("", ""),
+        };
+        if i == 0 || !path.is_empty() {
+            db::set_setting(conn, &p, path)?;
+            db::set_setting(conn, &a, args)?;
+        } else {
+            conn.execute("DELETE FROM settings WHERE key IN (?, ?)", [&p, &a])?;
+        }
+    }
+    Ok(())
+}
+
+/// Anzeigename eines Emulators: Programmname ohne Endung, z. B. „x64sc“, „denise“.
+pub fn display_name(path: &str) -> String {
+    let name = path
+        .trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default();
+    name.strip_suffix(".app")
+        .or_else(|| name.strip_suffix(".exe"))
+        .unwrap_or(name)
+        .to_string()
+}
+
+/// Emulatorfamilie für die Optionen je Spiel: „vice“, „denise“ oder der Programmname.
+pub fn family(path: &str) -> String {
+    if is_vice(path) {
+        "vice".into()
+    } else {
+        program_stem(path)
+    }
+}
+
+/// Dateiname ohne Endung (.exe, .app), klein geschrieben; Windows-Pfade auch unter Unix.
+fn program_stem(path: &str) -> String {
     let name = path
         .trim_end_matches(['/', '\\'])
         .rsplit(['/', '\\'])
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let stem = name
-        .trim_end_matches(".exe")
+    name.trim_end_matches(".exe")
         .trim_end_matches(".app")
-        .to_string();
+        .to_string()
+}
+
+/// Sieht nach, ob der Pfad nach Denise aussieht (deniseemu.sourceforge.io).
+pub fn is_denise(path: &str) -> bool {
+    program_stem(path) == "denise"
+}
+
+/// Sieht nach, ob der Pfad nach VICE aussieht (dann gibt es die Wechselliste für mehrere Disketten).
+pub fn is_vice(path: &str) -> bool {
+    let stem = program_stem(path);
     // Snap: „vice-jz.x64sc“; Flatpak: „net.sf.VICE“
     let stem = stem.rsplit('.').next().unwrap_or_default().to_string();
     matches!(stem.as_str(), "x64sc" | "x64" | "x128" | "xscpu64" | "vice")
@@ -168,6 +280,39 @@ fn search(home: Option<&Path>) -> Vec<String> {
         })
         .collect();
     vice_dirs.extend(nested);
+    // Denise: „Denise.app“ direkt im Programmordner, sonst Ordner mit „denise“ im Namen
+    let denise_exe = if cfg!(windows) {
+        "Denise.exe"
+    } else {
+        "denise"
+    };
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            add(dir.join(denise_exe));
+        }
+    }
+    let mut denise_dirs: Vec<PathBuf> = Vec::new();
+    for root in &roots {
+        if cfg!(target_os = "macos") {
+            add(root.join("Denise.app"));
+            add(root.join("denise.app"));
+        }
+        for d in subdirs(root) {
+            let name = lower_name(&d);
+            if name.contains("denise") {
+                denise_dirs.push(d);
+            } else if ["emu", "c64", "commodore", "retro"]
+                .iter()
+                .any(|k| name.contains(k))
+            {
+                denise_dirs.extend(
+                    subdirs(&d)
+                        .into_iter()
+                        .filter(|s| lower_name(s).contains("denise")),
+                );
+            }
+        }
+    }
     vice_dirs.sort();
     vice_dirs.dedup();
     vice_dirs.reverse(); // neueste Fassung zuerst
@@ -177,6 +322,15 @@ fn search(home: Option<&Path>) -> Vec<String> {
         }
         add(d.join("bin").join(exe));
         add(d.join(exe));
+    }
+    denise_dirs.sort();
+    denise_dirs.dedup();
+    for d in denise_dirs {
+        if cfg!(target_os = "macos") {
+            add(d.join("Denise.app"));
+            add(d.join("denise.app"));
+        }
+        add(d.join(denise_exe));
     }
     found
         .into_iter()
@@ -280,9 +434,35 @@ pub fn command_line(
     file: &Path,
     fliplist: Option<&Path>,
 ) -> (String, Vec<String>) {
+    command_line_with(emulator, args, "", file, fliplist)
+}
+
+/// Wie `command_line`, mit zusätzlichen Optionen dieses Spiels (`extra`, z. B. „-ntsc -reu“). Sie
+/// stehen vor den allgemeinen Optionen und damit vor der Datei, wie VICE es verlangt.
+pub fn command_line_with(
+    emulator: &str,
+    args: &str,
+    extra: &str,
+    file: &Path,
+    fliplist: Option<&Path>,
+) -> (String, Vec<String>) {
+    command_line_full(emulator, args, extra, &[], file, fliplist)
+}
+
+/// Wie `command_line_with`, dazu fertige Argumente `pre` (z. B. das REU-Abbild), die unverändert
+/// vor den Optionen des Spiels stehen – Pfade darin dürfen Leerzeichen enthalten.
+pub fn command_line_full(
+    emulator: &str,
+    args: &str,
+    extra: &str,
+    pre: &[String],
+    file: &Path,
+    fliplist: Option<&Path>,
+) -> (String, Vec<String>) {
     let file_s = file.to_string_lossy();
-    let template = if args.trim().is_empty() {
-        DEFAULT_ARGS
+    // Leer oder die VICE-Vorgabe: Vorgabe des eingestellten Programms (Denise kennt „-autostart“ nicht).
+    let template = if args.trim().is_empty() || args.trim() == DEFAULT_ARGS {
+        default_args(emulator)
     } else {
         args
     };
@@ -295,6 +475,12 @@ pub fn command_line(
         list.push("-flipname".into());
         list.push(f.to_string_lossy().into_owned());
     }
+    list.extend(pre.iter().cloned());
+    list.extend(
+        split_args(extra)
+            .into_iter()
+            .filter(|p| !p.contains("{file}")),
+    );
     list.extend(parts.into_iter().map(|p| p.replace("{file}", &file_s)));
 
     let emulator = emulator.trim();
@@ -394,7 +580,34 @@ pub fn start(
         std::fs::write(&list, text)?;
         fliplist = Some(list);
     }
-    let (program, argv) = command_line(emulator, args, &file, fliplist.as_deref());
+    let extra =
+        crate::db::emu_options_of(conn, &[sha1.to_string()], &family(emulator)).unwrap_or_default();
+    // REU-Abbild neben der Startdatei? Dann als Kopie neben die Startdatei im Emulator-Ordner.
+    let mut pre = Vec::new();
+    let mut reu_note = String::new();
+    let details = db::details(conn, sha1)?;
+    if let Some(comp) = crate::reu::find(&details, true, password_for) {
+        let image = file.with_extension("reu");
+        let have = std::fs::metadata(&image).map(|m| m.len()).unwrap_or(0);
+        if crate::reu::emulator_args(emulator, &image, comp.size()).is_some() {
+            if have != comp.size() {
+                let data = comp.read(password_for)?;
+                let tmp = image.with_extension("reu.tmp");
+                std::fs::write(&tmp, &data)?;
+                std::fs::rename(&tmp, &image)?;
+            }
+            pre = crate::reu::emulator_args(emulator, &image, comp.size()).unwrap_or_default();
+            let kb = crate::reu::size_kb(comp.size());
+            reu_note = tr!(" Mit REU-Abbild ({kb} KB).", " With REU image ({kb} KB).");
+        } else {
+            reu_note = tr!(
+                " Das REU-Abbild neben der Datei lädt Breadbin nur in VICE und Denise mit.",
+                " Breadbin loads the REU image next to the file only in VICE and Denise."
+            );
+        }
+    }
+    let (program, argv) =
+        command_line_full(emulator, args, &extra, &pre, &file, fliplist.as_deref());
     let mut child = Command::new(&program)
         .args(&argv)
         .current_dir(dir)
@@ -416,7 +629,7 @@ pub fn start(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let message = if fliplist.is_some() {
+    let message = if fliplist.is_some() && is_vice(emulator) {
         tr!(
             "Im Emulator gestartet ({name}); weitere Disketten über die Wechselliste (Fliplist) von VICE einlegen, meist Alt+N.",
             "Started in the emulator ({name}); insert further disks via VICE's fliplist, usually Alt+N."
@@ -427,6 +640,7 @@ pub fn start(
             "Started in the emulator ({name})."
         )
     };
+    let message = message + &reu_note;
     Ok(EmuResult {
         message,
         file: file.to_string_lossy().into_owned(),
@@ -446,6 +660,24 @@ mod tests {
         assert!(is_vice("/var/lib/flatpak/exports/bin/net.sf.VICE"));
         assert!(is_vice("/snap/bin/vice-jz.x64sc"));
         assert!(!is_vice("/opt/denise/Denise"));
+        assert!(is_denise("/Applications/denise.app"));
+        assert!(is_denise("C:\\Emu\\Denise\\Denise.exe"));
+        assert!(!is_denise("/usr/bin/x64sc"));
+    }
+
+    #[test]
+    fn aufrufzeile_denise() {
+        let f = Path::new("/tmp/a b.d64");
+        let (_, a) = command_line("/opt/denise/denise", "", f, None);
+        assert_eq!(a, ["/tmp/a b.d64"]);
+        let (_, a) = command_line("/opt/denise/denise", DEFAULT_ARGS, f, Some(Path::new("x")));
+        assert_eq!(
+            a,
+            ["/tmp/a b.d64"],
+            "VICE-Vorgabe und Wechselliste nicht an Denise"
+        );
+        let (_, a) = command_line_with("/opt/denise/denise", "", "-sid-8580", f, None);
+        assert_eq!(a, ["-sid-8580", "/tmp/a b.d64"]);
     }
 
     #[test]
@@ -455,6 +687,12 @@ mod tests {
         assert_eq!(p, "/usr/bin/x64sc");
         assert_eq!(a, ["-autostart", "/tmp/a b.d64"]);
 
+        let (_, a) = command_line_with("/usr/bin/x64sc", "", "-ntsc -reu", f, None);
+        assert_eq!(
+            a,
+            ["-ntsc", "-reu", "-autostart", "/tmp/a b.d64"],
+            "Optionen des Spiels vor den allgemeinen"
+        );
         let (_, a) = command_line("/usr/bin/x64sc", "-warp", f, None);
         assert_eq!(
             a,
@@ -526,10 +764,16 @@ mod tests {
         ));
         let b = mk(&format!("Emulatoren/WinVICE-3.1-x64/{exe}"));
         let c = mk(&format!("Desktop/vice-3.8/{exe}"));
+        let dexe = if cfg!(windows) {
+            "Denise.exe"
+        } else {
+            "denise"
+        };
+        let d = mk(&format!("Emulatoren/Denise_2.9/{dexe}"));
         mk(&format!("Desktop/andere/{exe}"));
         mk(&format!("Projekte/vice/{exe}"));
         let got = search(Some(h.path()));
-        for p in [&a, &b, &c] {
+        for p in [&a, &b, &c, &d] {
             // Als Pfad vergleichen: unter Windows mischt der Test „/“ und „\“.
             assert!(
                 got.iter().any(|g| Path::new(g) == p.as_path()),
@@ -541,6 +785,49 @@ mod tests {
                 .any(|g| g.contains("andere") || g.contains("Projekte")),
             "{got:?}"
         );
+    }
+
+    #[test]
+    fn liste_speichern() {
+        let conn = db::open_in_memory().unwrap();
+        let e = |p: &str, a: &str| Emulator {
+            path: p.into(),
+            args: a.into(),
+        };
+        save_list(
+            &conn,
+            &[
+                e("/usr/bin/x64sc", DEFAULT_ARGS),
+                e("", "x"),
+                e("/opt/denise/denise", "{file}"),
+                e("/opt/x/emu", "--go {file}"),
+            ],
+        )
+        .unwrap();
+        let l = list(&conn);
+        assert_eq!(
+            l,
+            [
+                e("/usr/bin/x64sc", ""),
+                e("/opt/denise/denise", ""),
+                e("/opt/x/emu", "--go {file}")
+            ]
+        );
+        assert_eq!(
+            db::get_setting(&conn, "emulator_path_2")
+                .unwrap()
+                .as_deref(),
+            Some("/opt/denise/denise")
+        );
+        save_list(&conn, &[e("/opt/denise/denise", "")]).unwrap();
+        assert_eq!(list(&conn).len(), 1);
+        assert_eq!(db::get_setting(&conn, "emulator_path_3").unwrap(), None);
+        save_list(&conn, &[]).unwrap();
+        assert!(list(&conn).is_empty());
+        assert_eq!(display_name("/Applications/denise.app/"), "denise");
+        assert_eq!(display_name("C:\\V\\x64sc.exe"), "x64sc");
+        assert_eq!(family("/snap/bin/vice-jz.x64sc"), "vice");
+        assert_eq!(family("D:\\Denise\\Denise.exe"), "denise");
     }
 
     #[test]

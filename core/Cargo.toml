@@ -1,11 +1,12 @@
 [package]
 name = "breadbin-core"
-version = "0.9.3"
+version = "0.9.4"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
 anyhow = "1.0.104"
+base64 = "0.23.1"
 crc32fast = "1.5.3"
 hex = "0.4.3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
