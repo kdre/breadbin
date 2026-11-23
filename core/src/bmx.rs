@@ -1,11 +1,13 @@
 //! BMX (Bare Metal X: VICE ohne Betriebssystem auf Raspberry Pi 4/5/400/500) über seine „Remote API“.
 //!
-//! **Ungetestet, Vorschau** – gebaut ohne echtes Gerät nach dem öffentlichen BMX-Quelltext (
+//! **Ungetestet, Vorschau** – gebaut ohne echtes Gerät nach dem BMX-Quelltext (
 //! `src/remote/bmx_api_router.cpp`, `src/remote/remote_service.cpp`, `src/kernel.cpp`,
-//! `src/update/fat_path_policy.cpp`); geprüft nur mit dem Schein-BMX (`mock`) in den Tests.
-//! Stellen, die nicht durch den Quelltext gedeckt sind, tragen den Kommentar `ANNAHME:`.
+//! `src/update/fat_path_policy.cpp`, zuletzt abgeglichen mit Fassung 2026.10.09.1) und den Antworten
+//! des BMX-Entwicklers; geprüft nur mit dem
+//! Schein-BMX (`mock`) in den Tests. Stellen, die weder Quelltext noch Entwickler bestätigt haben,
+//! tragen den Kommentar `ANNAHME:`.
 //!
-//! ## Laut Quelltext gesichert
+//! ## Gesichert (Quelltext bzw. vom BMX-Entwickler bestätigt)
 //! - Basis `http://<ip>/bmx/api/v1`; in BMX „Remote API“ einschalten. Passwort (falls gesetzt) als
 //!   Kopfzeile `X-Password`; falsch/fehlend → 403 `{"error":"forbidden"}`.
 //! - Pfade `VOL:/wurzel/…`, `VOL` ∈ SYS, USER, SD, USB, USB2, USB3, `wurzel` ∈ `disks`, `tapes`,
@@ -16,16 +18,27 @@
 //!   ganzen Pfad an. Eingelegte Dateien: 409 `file_in_use` beim Überschreiben/Löschen.
 //! - Aktionen `POST /actions/<id>`: `media.autostart`, `media.drive.8.attach` (Inhalt
 //!   `{"path":"USER:/…"}`), `media.cartridge.detach`, `media.drive.8.detach` (ohne Inhalt).
-//! - `GET /state` (`machine`, `release_version`, `board`), `GET /storage`, `GET /media`,
-//!   `GET /screenshot.ppm?width=160..3840` (zusammengesetztes Anzeigebild als P6-PPM).
+//! - `/bmx/api/v1` bleibt kompatibel: bestehende Endpunkte ändern sich nicht, es kommen nur neue
+//!   dazu („work in progress“ meint fehlende Einstellungen).
+//! - Fremdprogramme dürfen über `/files` und `/file` auflisten, herunterladen und löschen; erreichbar
+//!   sind nur die Medienordner, Systemdateien nicht.
+//! - Laufwerke: `SYS` gibt es immer (`SD` ist ein anderer Name dafür), `USER` nur, wenn die Karte eine
+//!   zweite Partition hat. Vorrang: `USER`, wenn eingebunden, sonst `SYS`; beide haben `disks`,
+//!   `tapes`, `carts`, `snapshots`. `GET /storage` nennt je Laufwerk `mounted` und `free_bytes`;
+//!   ist das Laufwerk voll, antwortet `PUT /file` mit 507 `insufficient_space`.
+//! - `media.autostart` ruft `emux_autostart_file` → VICEs `autostart_autodetect` (Disk, Band, Modul,
+//!   PRG/P00), also auch TAP, G64 und CRT.
+//! - `GET /state` (`machine`, `release_version`, `board`), `GET /media`.
+//! - `GET /screenshot.ppm?width=160..3840` liefert das ganze zusammengesetzte Anzeigebild als binäres
+//!   P6-PPM (Emulatorbild mit Rand, freie Fläche, ggf. CRT-Effekte, offenes Menü). Geplant ist
+//!   `stage=emulator` für das reine Emulatorbild; ältere Fassungen antworten darauf mit 400
+//!   `invalid_request` – Breadbin fragt dann ohne den Zusatz noch einmal.
 //! - Netzsuche: UDP an Port 6464 `BMXDEV-DISCOVER/1 <32 Hex klein>\n`, Antwort
 //!   `BMXDEV-HERE/1 <nonce> 80\n`; der Antworter läuft, sobald Remote API *oder* Entwicklermodus an ist.
 //!
-//! ## Annahmen (offene Fragen an das BMX-Projekt, Antwort steht aus)
-//! - `/bmx/api/v1` bleibt in dieser Form (Changelog: „still work in progress“).
-//! - Die Netzsuche antwortet ohne Entwicklermodus (Quelltext sagt ja, am Gerät ungeprüft).
-//! - Autostart startet auch TAP, G64 und CRT (ruft VICEs `autostart_file`; am Gerät ungeprüft).
-//! - `USER` ist das richtige Laufwerk für Dateien von Fremdprogrammen.
+//! ## Annahmen (am Gerät noch zu prüfen)
+//! - Autostart von TAP, G64 und CRT läuft am Gerät durch (Quelltext ja, ungeprüft).
+//! - Module in `carts/`, Bänder in `tapes/` (siehe `dir_for`).
 //! - Rahmenzuschnitt des Bildschirmfotos nach den VICE-PAL-Maßen (siehe `shot_to_png`).
 //!
 //! ## Für Mitwirkende
@@ -34,7 +47,7 @@
 //!   `launch.rs::launch_bmx`, die Dateischicht (Scan, Kopieren, Leeren) in `remote.rs`.
 //! - Was die Oberfläche anbietet, steuert `isBmx` in `ui/app.js` (`syncLaunchTarget`, `canShoot`).
 //! - Neue Endpunkte zuerst im `mock` unten nachbilden, dann testen: `cargo test -p breadbin-core bmx`.
-//! - Prüfliste für das echte Gerät: `.claude/anfragen/bmx-test.md` (bzw. `bmx-test.en.md`).
+//! - Prüfliste für das echte Gerät: `docs/bmx-test.md` (deutsch: `docs/bmx-test.de.md`).
 
 use crate::ftp::RemoteEntry;
 use crate::tr;
@@ -96,8 +109,8 @@ pub fn hints(st: &State) -> Vec<String> {
         ));
     }
     out.push(tr!(
-        "Startordner liegen bei BMX unter disks/, tapes/ oder carts/ eines Laufwerks (z. B. /USER/disks/Breadbin); Module legt Breadbin nach carts/, Bänder nach tapes/.",
-        "On BMX, launch folders live under disks/, tapes/ or carts/ of a drive (e.g. /USER/disks/Breadbin); Breadbin puts cartridges into carts/ and tapes into tapes/."
+        "Startordner liegen bei BMX unter disks/, tapes/ oder carts/ eines Laufwerks: /USER/disks/Breadbin, wenn die Karte eine USER-Partition hat, sonst /SYS/disks/Breadbin. Module legt Breadbin nach carts/, Bänder nach tapes/.",
+        "On BMX, launch folders live under disks/, tapes/ or carts/ of a drive: /USER/disks/Breadbin if the card has a USER partition, otherwise /SYS/disks/Breadbin. Breadbin puts cartridges into carts/ and tapes into tapes/."
     ));
     out
 }
@@ -131,8 +144,7 @@ fn is_media_root(name: &str) -> bool {
 /// Ordner für eine Dateiart neben dem Startordner: aus `/USER/disks/Breadbin` wird für Module
 /// `/USER/carts/Breadbin`, für Bänder `/USER/tapes/Breadbin`. Liegt der Startordner nicht unter
 /// einer BMX-Wurzel, bleibt er, wie er ist (BMX meldet dann selbst einen Fehler).
-// ANNAHME: Module in `carts/`, Bänder in `tapes/` – so vom BMX-Projekt empfohlen; ob BMX sie aus
-// `disks/` ebenso startet, ist ungeprüft.
+// ANNAHME: Module in `carts/`, Bänder in `tapes/` – so vom BMX-Projekt empfohlen; am Gerät ungeprüft.
 pub fn dir_for(upload_dir: &str, format: &str) -> String {
     let root = match format {
         "CRT" => "carts",
@@ -161,16 +173,13 @@ pub fn launch_dirs(upload_dir: &str) -> Vec<String> {
     out
 }
 
-/// Vorschlag für den Startordner aus der Laufwerksliste: USER zuerst, sonst SD, sonst das erste.
-// ANNAHME: `USER` ist das Laufwerk für Nutzerdateien.
+/// Vorschlag für den Startordner aus den eingebundenen Laufwerken: `USER`, wenn es die Partition gibt,
+/// sonst `SYS` (gibt es immer) – so vom BMX-Entwickler empfohlen.
 pub fn suggest_upload_dir(drives: &[String]) -> String {
     let pick = drives
         .iter()
         .find(|d| d.eq_ignore_ascii_case("USER"))
-        .or_else(|| drives.iter().find(|d| d.eq_ignore_ascii_case("SD")))
-        .or_else(|| drives.first())
-        .cloned()
-        .unwrap_or_else(|| "USER".into());
+        .map_or("SYS", |d| d.as_str());
     format!("/{pick}/disks/Breadbin")
 }
 
@@ -372,18 +381,57 @@ impl Bmx {
             .ok_or_else(|| anyhow!(tr!("{} ist kein BMX.", "{} is not a BMX.", self.host)))
     }
 
-    /// Eingebundene Laufwerke (`USER`, `SD`, `USB` …).
-    pub fn volumes(&self) -> Result<Vec<String>> {
+    /// Eingebundene Laufwerke mit freiem Platz (`None`, wenn BMX keinen nennt). `SD` ist bei BMX nur
+    /// ein anderer Name für `SYS` und fällt weg, wenn `SYS` dabei ist.
+    fn storage(&self) -> Result<Vec<(String, Option<u64>)>> {
         let v = self.json("/storage", &[])?;
-        Ok(v["volumes"]
+        let all: Vec<(String, Option<u64>)> = v["volumes"]
             .as_array()
             .map(|a| {
                 a.iter()
                     .filter(|x| x["mounted"].as_bool().unwrap_or(true))
-                    .filter_map(|x| x["name"].as_str().map(str::to_string))
+                    .filter_map(|x| {
+                        Some((x["name"].as_str()?.to_string(), x["free_bytes"].as_u64()))
+                    })
                     .collect()
             })
-            .unwrap_or_default())
+            .unwrap_or_default();
+        let has_sys = all.iter().any(|(n, _)| n.eq_ignore_ascii_case("SYS"));
+        Ok(all
+            .into_iter()
+            .filter(|(n, _)| !(has_sys && n.eq_ignore_ascii_case("SD")))
+            .collect())
+    }
+
+    /// Eingebundene Laufwerke (`SYS`, `USER`, `USB` …).
+    pub fn volumes(&self) -> Result<Vec<String>> {
+        Ok(self.storage()?.into_iter().map(|(n, _)| n).collect())
+    }
+
+    /// Prüft vor dem Hochladen, ob auf dem Laufwerk von `path` genug Platz ist. Nennt BMX keinen
+    /// freien Platz oder kennt das Laufwerk nicht, entscheidet das Gerät selbst beim Hochladen.
+    fn check_space(&self, path: &str, needed: u64) -> Result<()> {
+        let p = parts(path);
+        let Some(vol) = p.first() else { return Ok(()) };
+        let vol = if vol.eq_ignore_ascii_case("SD") {
+            "SYS"
+        } else {
+            vol
+        };
+        let free = self
+            .storage()?
+            .into_iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(vol))
+            .and_then(|(_, f)| f);
+        match free {
+            Some(free) if free < needed => bail!(tr!(
+                "Auf dem BMX-Laufwerk {vol} ist nicht genug Platz: frei {} KB, nötig {} KB.",
+                "Not enough space on BMX drive {vol}: {} KB free, {} KB needed.",
+                free / 1024,
+                needed.div_ceil(1024)
+            )),
+            _ => Ok(()),
+        }
     }
 
     /// Einträge eines Ordners; `/` liefert die Laufwerke, `/USER` die BMX-Wurzeln als Ordner.
@@ -471,9 +519,11 @@ impl Bmx {
     /// in den Dateinamen, gleicher Name und gleiche Größe heißen also gleicher Inhalt – und eine
     /// gerade eingelegte Diskette ließe sich ohnehin nicht überschreiben.
     pub fn upload_if_missing(&self, path: &str, data: &[u8]) -> Result<bool> {
-        if self.size_of(path)? == Some(data.len() as u64) {
+        let old = self.size_of(path)?;
+        if old == Some(data.len() as u64) {
             return Ok(false);
         }
+        self.check_space(path, (data.len() as u64).saturating_sub(old.unwrap_or(0)))?;
         self.upload(path, data)?;
         Ok(true)
     }
@@ -550,7 +600,7 @@ impl Bmx {
     }
 
     /// Startet eine Datei wie „Autostart“ im BMX-Menü (setzt die Maschine zurück).
-    /// ANNAHME: gilt auch für TAP, G64 und CRT (VICE `autostart_file`).
+    /// Gilt für alle Formate (VICE `autostart_autodetect`); am Gerät ungeprüft.
     pub fn autostart(&self, path: &str) -> Result<()> {
         self.action("media.autostart", Some(path))
     }
@@ -580,15 +630,31 @@ impl Bmx {
     }
 
     /// Bildschirmfoto als PNG. `crop` schneidet den C64-Rahmen ab (320 × 200).
+    /// Fragt zuerst nach dem reinen Emulatorbild (`stage=emulator`, vom BMX-Entwickler geplant); kennt
+    /// die BMX-Fassung den Zusatz nicht (400 `invalid_request`), noch einmal nach dem ganzen Anzeigebild.
     pub fn screenshot_png(&self, crop: bool) -> Result<Vec<u8>> {
         let width = SHOT_WIDTH.to_string();
-        let data = self.call(
+        let limit = 64 << 20;
+        let a = self.request(
             "GET",
             "/screenshot.ppm",
-            &[("width", &width)],
+            &[("width", &width), ("stage", "emulator")],
             Body::None,
-            64 << 20,
+            limit,
         )?;
+        let data = if (200..300).contains(&a.status) {
+            a.data
+        } else if a.status == 400 {
+            self.call(
+                "GET",
+                "/screenshot.ppm",
+                &[("width", &width)],
+                Body::None,
+                limit,
+            )?
+        } else {
+            return Err(status_error(a.status, &a.data));
+        };
         let img = ppm_to_image(&data)?;
         shot_to_png(img, crop)
     }
@@ -637,9 +703,17 @@ fn status_error(status: u16, body: &[u8]) -> anyhow::Error {
             "BMX lehnt den Pfad ab – Startordner müssen unter disks/, tapes/ oder carts/ eines Laufwerks liegen (z. B. /USER/disks/Breadbin).",
             "BMX rejects the path – launch folders must be under disks/, tapes/ or carts/ of a drive (e.g. /USER/disks/Breadbin)."
         )),
+        (507, _) => anyhow!(tr!(
+            "Auf dem BMX-Laufwerk ist nicht genug Platz.",
+            "Not enough space on the BMX drive."
+        )),
+        (422, "hash_mismatch") => anyhow!(tr!(
+            "Die Datei kam beschädigt bei BMX an (Prüfsumme falsch) – bitte noch einmal versuchen.",
+            "The file arrived damaged at BMX (checksum wrong) – please try again."
+        )),
         (404, "volume_unavailable") => anyhow!(tr!(
-            "Das Laufwerk gibt es in BMX nicht (USB-Stick eingesteckt?).",
-            "The drive does not exist in BMX (USB stick plugged in?)."
+            "Das Laufwerk gibt es in BMX nicht (USB-Stick eingesteckt? USER gibt es nur mit zweiter Partition auf der Karte).",
+            "The drive does not exist in BMX (USB stick plugged in? USER only exists with a second partition on the card)."
         )),
         _ => anyhow!(tr!(
             "BMX meldet {status}: {code}",
@@ -831,7 +905,7 @@ pub fn discover_at(targets: &[SocketAddr], wait: Duration) -> Vec<(IpAddr, u16)>
 
 /// Netzsuche im eigenen Netz: Broadcast an das /24-Netz der eigenen Adresse und an 255.255.255.255.
 /// Gibt die Adressen der BMX zurück (mit `:port`, falls nicht 80).
-// ANNAHME: antwortet ohne Entwicklermodus (Quelltext: ja). Befragt wird nur die Schnittstelle der
+// Antwortet, sobald die Remote API an ist (vom BMX-Entwickler bestätigt). Befragt wird nur die Schnittstelle der
 // Standardroute (ohne zusätzliche Abhängigkeit für die Liste aller Schnittstellen).
 pub fn discover(local: Option<std::net::Ipv4Addr>, wait: Duration) -> Vec<String> {
     let mut targets = vec![SocketAddr::from(([255, 255, 255, 255], DISCOVERY_PORT))];
@@ -875,6 +949,14 @@ pub(crate) mod mock {
         pub machine: String,
         /// Anzahl der Uploads.
         pub uploads: usize,
+        /// Gibt es die Partition `USER`?
+        pub user: bool,
+        /// Platz je Laufwerk (Byte), davon geht ab, was in `files` liegt.
+        pub free: u64,
+        /// Kennt `screenshot.ppm` schon `stage=emulator`?
+        pub stage: bool,
+        /// `stage` je Bildschirmfoto-Abfrage (leer = ohne).
+        pub shots: Vec<String>,
         /// Bildschirmfoto (PPM).
         pub ppm: Vec<u8>,
     }
@@ -890,6 +972,10 @@ pub(crate) mod mock {
                 password: String::new(),
                 machine: "C64".into(),
                 uploads: 0,
+                user: true,
+                free: 1 << 28,
+                stage: false,
+                shots: Vec::new(),
                 ppm: Vec::new(),
             }
         }
@@ -1029,7 +1115,16 @@ pub(crate) mod mock {
                 respond(&mut s, 200, "application/json", body.as_bytes(), None);
             }
             ("GET", "/storage") => {
-                let body = r#"{"volumes":[{"name":"SYS","mounted":true,"total_bytes":1,"free_bytes":1},{"name":"USER","mounted":true,"total_bytes":1,"free_bytes":1},{"name":"USB","mounted":false,"total_bytes":0,"free_bytes":0}]}"#;
+                let used: u64 = g.files.values().map(|v| v.len() as u64).sum();
+                let free = g.free.saturating_sub(used);
+                let body = serde_json::json!({"volumes": [
+                    {"name": "SYS", "mounted": true, "total_bytes": 1 << 29, "free_bytes": free},
+                    {"name": "USER", "mounted": g.user, "total_bytes": if g.user { 1 << 29 } else { 0 },
+                     "free_bytes": if g.user { free } else { 0 }},
+                    {"name": "SD", "mounted": true, "total_bytes": 1 << 29, "free_bytes": free},
+                    {"name": "USB", "mounted": false, "total_bytes": 0, "free_bytes": 0}
+                ]})
+                .to_string();
                 respond(&mut s, 200, "application/json", body.as_bytes(), None);
             }
             ("GET", "/media") => {
@@ -1117,7 +1212,7 @@ pub(crate) mod mock {
                             return fail(&mut s, 409, "file_in_use");
                         }
                         if hash != sha256_hex(&body) {
-                            return fail(&mut s, 422, "sha256_mismatch");
+                            return fail(&mut s, 422, "hash_mismatch");
                         }
                         let parent = p.rsplit_once('/').unwrap().0;
                         let parent_root = parent
@@ -1185,6 +1280,10 @@ pub(crate) mod mock {
                 respond(&mut s, 200, "application/json", br#"{"key":"x"}"#, None);
             }
             ("GET", "/screenshot.ppm") => {
+                g.shots.push(qv("stage").unwrap_or_default());
+                if qv("stage").is_some() && !g.stage {
+                    return fail(&mut s, 400, "invalid_request");
+                }
                 let data = g.ppm.clone();
                 respond(&mut s, 200, "image/x-portable-pixmap", &data, None);
             }
@@ -1228,11 +1327,24 @@ mod tests {
             suggest_upload_dir(&d(&["SYS", "USER"])),
             "/USER/disks/Breadbin"
         );
-        assert_eq!(suggest_upload_dir(&d(&[])), "/USER/disks/Breadbin");
+        assert_eq!(suggest_upload_dir(&d(&["SYS"])), "/SYS/disks/Breadbin");
+        assert_eq!(suggest_upload_dir(&d(&[])), "/SYS/disks/Breadbin");
         assert_eq!(
             pct("USER:/disks/A b+c.d64"),
             "USER%3A%2Fdisks%2FA%20b%2Bc.d64"
         );
+    }
+
+    #[test]
+    fn fehlertexte() {
+        let t = |st: u16, code: &str| {
+            status_error(st, format!("{{\"error\":\"{code}\"}}").as_bytes()).to_string()
+        };
+        assert!(t(507, "insufficient_space").contains("Platz"));
+        assert!(t(422, "hash_mismatch").contains("Prüfsumme"));
+        assert!(t(404, "volume_unavailable").contains("USER"));
+        assert!(t(409, "file_in_use").contains("eingelegt"));
+        assert!(t(418, "teapot").contains("418: teapot"));
     }
 
     #[test]
@@ -1344,7 +1456,7 @@ mod tests {
         assert_eq!(
             c.volumes().unwrap(),
             ["SYS", "USER"],
-            "USB nicht eingebunden"
+            "USB nicht eingebunden, SD nur anderer Name für SYS"
         );
         assert_eq!(c.list("/USER").unwrap().len(), 4);
         assert!(c.is_dir("/USER/disks").unwrap());
@@ -1394,14 +1506,38 @@ mod tests {
         let e = c.autostart("/USER/disks/Breadbin/fehlt.d64").unwrap_err();
         assert!(e.to_string().contains("422"), "{e}");
 
+        // Bildschirmfoto: ältere Fassung ohne `stage` → zweiter Versuch ohne; neuere → ein Versuch.
         m.state.lock().unwrap().ppm = ppm(160, 100, |_, _| [9, 9, 9]);
-        let png = c.screenshot_png(true).unwrap();
-        assert_eq!(
+        let size = |png: Vec<u8>| {
             image::load_from_memory(&png)
                 .unwrap()
                 .to_rgb8()
-                .dimensions(),
-            (320, 200)
+                .dimensions()
+        };
+        assert_eq!(size(c.screenshot_png(true).unwrap()), (320, 200));
+        assert_eq!(m.state.lock().unwrap().shots, ["emulator", ""]);
+        {
+            let mut g = m.state.lock().unwrap();
+            g.stage = true;
+            g.shots.clear();
+        }
+        assert_eq!(size(c.screenshot_png(false).unwrap()).0, 384);
+        assert_eq!(m.state.lock().unwrap().shots, ["emulator"]);
+
+        // Kein Platz mehr → verständliche Meldung, nichts hochgeladen.
+        m.state.lock().unwrap().free = 0;
+        let e = c
+            .upload_if_missing("/USER/disks/Breadbin/neu.d64", &[1; 2048])
+            .unwrap_err();
+        assert!(e.to_string().contains("nicht genug Platz"), "{e}");
+        assert_eq!(c.size_of("/USER/disks/Breadbin/neu.d64").unwrap(), None);
+
+        // Ohne USER-Partition: nur SYS.
+        m.state.lock().unwrap().user = false;
+        assert_eq!(c.volumes().unwrap(), ["SYS"]);
+        assert_eq!(
+            suggest_upload_dir(&c.volumes().unwrap()),
+            "/SYS/disks/Breadbin"
         );
     }
 }

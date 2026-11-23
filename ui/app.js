@@ -2043,9 +2043,9 @@ $("#dev-probe").addEventListener("click", async () => {
     fillDrives("#dev-drives", info.drives);
     if (!$("#dev-upload").value) {
       // TeensyROM: SD zuerst – große Module (über 850 KB) startet er nur von dort.
-      // BMX: nur Ordner unter disks/, tapes/, carts/ eines Laufwerks; USER zuerst.
+      // BMX: nur Ordner unter disks/, tapes/, carts/ eines Laufwerks; USER, wenn eingebunden, sonst SYS.
       const usb = isTr(info) ? (info.drives.find((d) => d === "SD") ?? info.drives[0] ?? "SD")
-        : isBmx(info) ? (info.drives.find((d) => d === "USER") ?? info.drives.find((d) => d === "SD") ?? info.drives[0] ?? "USER")
+        : isBmx(info) ? (info.drives.includes("USER") ? "USER" : "SYS")
         : info.drives.find((d) => d.toUpperCase().startsWith("USB")) ?? info.drives.find((d) => d === "SD") ?? "USB0";
       $("#dev-upload").value = isBmx(info) ? `/${usb}/disks/Breadbin` : `/${usb}/Breadbin`;
     }
@@ -2063,7 +2063,7 @@ $("#dev-save").addEventListener("click", async () => {
     editingDevice.kind = $("#dev-kind").value || "ultimate";
     const sd = isBmc(editingDevice) || isTr(editingDevice);
     const device = { ...editingDevice, host: $("#dev-host").value.trim(), name: $("#dev-name").value.trim(),
-      upload_dir: $("#dev-upload").value.trim() || (isBmx(editingDevice) ? "/USER/disks/Breadbin" : sd ? "/SD/Breadbin" : "/USB0/Breadbin"),
+      upload_dir: $("#dev-upload").value.trim() || (isBmx(editingDevice) ? "/SYS/disks/Breadbin" : sd ? "/SD/Breadbin" : "/USB0/Breadbin"),
       product: editingDevice.product || (isBmc(editingDevice) ? "BMC64" : isBmx(editingDevice) ? "BMX" : isTr(editingDevice) ? "TeensyROM" : "Ultimate") };
     await invoke("save_device", { device, password: $("#dev-password").value || null });
     $("#device-dialog").close();

@@ -60,7 +60,7 @@ eine Anleitung ist eingebaut (Knopf „?“ oder F1).
   PRG, P00, T64, TAP, CRT und alle Disk-Abbilder per Autostart; Diskwechsel ohne Neustart, Bildschirmfotos und
   automatisches Titelbild, Spielstände, Spiele kopieren, Suche im Netz
 - Nach dem Quelltext von BMX ohne echtes Gerät gebaut – Rückmeldungen von Besitzern willkommen. Startordner müssen unter
-  `disks/`, `tapes/` oder `carts/` eines Laufwerks liegen (z. B. `/USER/disks/Breadbin`). Nicht möglich: Ein-/Ausschalten
+  `disks/`, `tapes/` oder `carts/` eines Laufwerks liegen (`/USER/disks/Breadbin`, ohne USER-Partition `/SYS/disks/Breadbin`). Nicht möglich: Ein-/Ausschalten
 
 **TeensyROM (ungetestet)**
 - Spiele über das TCP-Fernsteuerprotokoll des TeensyROM hochladen und starten (Port 2112, „Enable TCP Listener“):

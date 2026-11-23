@@ -59,7 +59,7 @@ has a built-in manual (“?” button or F1).
   T64, TAP, CRT and all disk images by autostart; disk swap without a restart, screenshots and automatic title
   pictures, saved games, copy games, network search
 - Built from the BMX source code without a real device – feedback from owners welcome. Launch folders must be under
-  `disks/`, `tapes/` or `carts/` of a drive (e.g. `/USER/disks/Breadbin`). Not possible: switching on/off
+  `disks/`, `tapes/` or `carts/` of a drive (`/USER/disks/Breadbin`, without a USER partition `/SYS/disks/Breadbin`). Not possible: switching on/off
 
 **TeensyROM (untested)**
 - Upload and start games over the TeensyROM's TCP remote protocol (port 2112, “Enable TCP Listener”): PRG, P00,
