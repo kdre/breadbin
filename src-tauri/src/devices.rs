@@ -1,11 +1,11 @@
-//! Befehle für Geräte (Ultimate, BMC64, TeensyROM): anlegen, prüfen, Ordner als Quelle, Spiele starten.
+//! Befehle für Geräte (Ultimate, BMC64, TeensyROM, BMX): anlegen, prüfen, Ordner als Quelle, Spiele starten.
 //!
-//! Ein Netzwerk-Passwort bzw. die BMC64-PIN (falls gesetzt) liegt im Schlüsselbund.
+//! Ein Netzwerk-Passwort, die BMC64-PIN bzw. das BMX-Passwort (falls gesetzt) liegt im Schlüsselbund.
 
 use base64::Engine;
 use breadbin_core::launch::{self, Device, DeviceInfo, LaunchResult};
 use breadbin_core::tr;
-use breadbin_core::{bmc64, db, emulator, metadata, power, screenshot, teensyrom};
+use breadbin_core::{bmc64, bmx, db, emulator, metadata, power, screenshot, teensyrom};
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
@@ -236,6 +236,11 @@ pub async fn capture_screen(
         ));
     }
     let png = tauri::async_runtime::spawn_blocking(move || {
+        if dev.is_bmx() {
+            return bmx::Bmx::new(&dev.host, &device_password(&dev.host))
+                .screenshot_png(crop)
+                .map_err(err);
+        }
         let frame = screenshot::capture(
             &dev.host,
             &device_password(&dev.host),
@@ -291,6 +296,17 @@ pub async fn device_status(app: AppHandle, id: i64) -> CmdResult<DeviceStatus> {
                 firmware: st.as_ref().map(|s| s.version.clone()).unwrap_or_default(),
                 kernal: String::new(),
                 hints: st.as_ref().map(bmc64::hints).unwrap_or_default(),
+            };
+        }
+        if dev.is_bmx() {
+            let st = bmx::quick_status(&dev.host, &password);
+            return DeviceStatus {
+                online: st.is_some(),
+                can_wake: false,
+                can_power_off: false,
+                firmware: st.as_ref().map(|s| s.version.clone()).unwrap_or_default(),
+                kernal: String::new(),
+                hints: st.as_ref().map(bmx::hints).unwrap_or_default(),
             };
         }
         if dev.is_teensyrom() {

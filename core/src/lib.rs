@@ -3,6 +3,7 @@
 pub mod awake;
 pub mod backup;
 pub mod bmc64;
+pub mod bmx;
 pub mod db;
 pub mod emulator;
 pub mod formats;

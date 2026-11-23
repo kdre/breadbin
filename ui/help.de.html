@@ -3,7 +3,7 @@
   <a href="#h-sources">Quellen und Scannen</a>
   <a href="#h-list">Die Liste</a>
   <a href="#h-details">Details</a>
-  <a href="#h-devices">Geräte (Ultimate, BMC64, TeensyROM)</a>
+  <a href="#h-devices">Geräte (Ultimate, BMC64, BMX, TeensyROM)</a>
   <a href="#h-launch">Starten und Einlegen</a>
   <a href="#h-emu">Emulator</a>
   <a href="#h-scraper">Beschreibungen</a>
@@ -78,7 +78,7 @@ einem Ultimate 64, einem C64 Ultimate oder einem 1541 Ultimate II+ – oder in e
 sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase64, Lemon64 und im C64-Wiki
 (und die Seite bei ScreenScraper) im Browser.</p>
 
-<h3 id="h-devices">Geräte (Ultimate, BMC64, TeensyROM)</h3>
+<h3 id="h-devices">Geräte (Ultimate, BMC64, BMX, TeensyROM)</h3>
 <ul>
   <li>Unterstützt: Ultimate 64 (Elite, Elite II), C64 Ultimate und das Steckmodul 1541 Ultimate II, II+ und II+L (dort ungetestet;
     der II ohne Plus braucht einen USB-Netzwerkadapter). Beim Steckmodul fallen Bildschirmfoto, automatisches Titelbild und
@@ -91,6 +91,16 @@ sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase
     in „Bearbeiten“ ins Passwortfeld. Ab BMC64 5.5.1 (5.5.0 bricht größere Uploads oft ab). Nicht möglich: Diskwechsel ohne
     Neustart, Bildschirmfotos, Ein- und Ausschalten aus der App. Ein eingelegtes Modul bleibt beim nächsten Start stecken
     – im BMC64-Menü entfernen. BMC64 startet nur, was die gerade laufende Maschine kann (C64, C128, VIC-20 …).</li>
+  <li><b>BMX</b> (Bare Metal X: VICE ohne Betriebssystem auf Raspberry Pi 4, 400, 5 und 500) – <b>ungetestet, Vorschau</b>: gebaut nach
+    dem Quelltext von BMX, ohne echtes Gerät. Im BMX-Menü die <b>„Remote API“</b> einschalten; ein dort gesetztes Passwort
+    gehört in „Bearbeiten“ ins Passwortfeld. „Im Netz suchen“ findet BMX (auch per UDP-Broadcast). BMX erlaubt Dateien nur
+    in den Ordnern <code>disks</code>, <code>tapes</code>, <code>carts</code> und <code>snapshots</code> eines Laufwerks,
+    der Startordner ist deshalb z. B. <code>/USER/disks/Breadbin</code>; Module legt Breadbin daneben nach
+    <code>/USER/carts/Breadbin</code>, Bänder nach <code>/USER/tapes/Breadbin</code>. Gestartet wird per Autostart – PRG,
+    P00, T64, TAP, CRT und alle Disk-Abbilder. „Einlegen“ wechselt die Diskette in Laufwerk 8 ohne Neustart,
+    „Bildschirmfoto“ und das automatische Titelbild gehen ebenfalls, dazu Spielstände und „Startordner leeren“. Vor dem
+    Start eines Nicht-Moduls zieht Breadbin ein steckendes Modul ab. Nicht möglich: Ein- und Ausschalten aus der App.
+    Rückmeldungen von BMX-Besitzern sind willkommen.</li>
   <li><b>TeensyROM</b> (Modul mit Teensy 4.1) – <b>ungetestet</b>: gebaut nach der Protokoll-Beschreibung des Herstellers,
     ohne echtes Gerät. Am TeensyROM <b>„Enable TCP Listener“</b> einschalten und die Adresse von Hand eintragen (Port 2112,
     „Im Netz suchen“ findet ihn nicht). Startordner auf der SD-Karte (<code>/SD/Breadbin</code>) oder dem USB-Stick
@@ -127,21 +137,22 @@ sich anklicken. <b>„Im Netz suchen“</b> öffnet die Suche bei CSDb, GameBase
   <li><b>Diskettenreihen</b>: Unter „Disketten“ steht jede Disk/Seite in der richtigen Reihenfolge – bei
     Disk 1 „Starten“, bei jeder „Einlegen“. Erkannt über den Namen („Side 2“, „Disk 1“, „s1“) oder über
     den Ordner (SUMMER1A, SUMMER1B, SUMMER1C).</li>
-  <li><b>Bänder (TAP)</b> lassen sich auf dem Ultimate nicht starten: Er hat dafür keinen Fernsteuerbefehl. Auf BMC64 und im Emulator gehen sie (siehe unten).</li>
+  <li><b>Bänder (TAP)</b> lassen sich auf dem Ultimate nicht starten: Er hat dafür keinen Fernsteuerbefehl. Auf BMC64, BMX (ungetestet) und im Emulator gehen sie (siehe unten).</li>
   <li><b>Spiele mit REU-Abbild</b> (Ultimate 64, C64 Ultimate, 1541 Ultimate): Liegt neben der Spieldatei eine
     <code>.reu</code>-Datei mit gleichem Namen (z. B. Myst 64REU), kopiert Breadbin sie in den Startordner, schaltet
     „RAM Expansion Unit“ und „Command Interface“ ein, stellt die REU-Größe passend ein und lädt die Datei ins REU, bevor
     das Spiel startet (je nach Größe einige Sekunden). Die Einstellungen ändert Breadbin nur vorübergehend, nicht dauerhaft;
     beim nächsten Start ohne REU-Abbild auf demselben Gerät kommen die vorherigen Werte zurück, spätestens nach dem
-    Aus- und Einschalten. BMC64 und TeensyROM können das nicht.</li>
-  <li><b>„Bildschirmfoto“</b> (Ultimate 64 und C64 Ultimate): Was das Gerät gerade zeigt, wird als eigenes
+    Aus- und Einschalten. BMC64, TeensyROM und BMX können das nicht.</li>
+  <li><b>„Bildschirmfoto“</b> (Ultimate 64, C64 Ultimate und BMX): Was das Gerät gerade zeigt, wird als eigenes
     Titelbild oder eigene Spielszene gespeichert (320 × 200, ohne Rahmen) – etwa für die
     Gemeinschaftsdaten. „Spielszene“ belegt den nächsten freien der vier Szenenplätze (sind alle voll, wird Szene 4
     ersetzt). Denselben Knopf gibt es im Dialog „Angaben selbst eintragen“ bei jedem Bildplatz.
     Der Ultimate schickt sein Bild dafür kurz als Videostrom; andere Empfänger (z. B. eine
     Jukebox) verlieren ihn dabei. <b>Nur mit Netzwerkkabel:</b> Den Videostrom schickt der Ultimate ausschließlich über
     Ethernet; ein Gerät, das nur per WLAN im Netz hängt, liefert kein Bild. Kommt trotz Kabel kein Bild an, blockiert
-    womöglich die Firewall eingehende UDP-Pakete.</li>
+    womöglich die Firewall eingehende UDP-Pakete. BMX liefert sein Bild über die Remote API (auch per WLAN); den Rahmen
+    schneidet Breadbin dort nach den üblichen VICE-Maßen ab (ungetestet).</li>
   <li><b>Titelbild automatisch</b> (⚙ Einstellungen, Standard aus): Nach „Starten“ wartet die App die eingestellte
     Zeit (Standard 25 Sekunden) und macht ein Bildschirmfoto als eigenes Titelbild – nur wenn das Spiel noch keines
     hat. Startest du vorher ein anderes Spiel auf demselben Gerät, gilt die Aufnahme für das neue. Zeigt das Bild

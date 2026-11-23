@@ -2,6 +2,16 @@
 
 English first, German below each version. / Englisch zuerst, Deutsch jeweils darunter.
 
+## Prepared, not released / Vorbereitet, noch nicht veröffentlicht
+
+- BMX (Bare Metal X on Raspberry Pi 4/5) as a fourth kind of device (**untested preview**, built from the BMX source code
+  without a real device): upload and start all formats including TAP via the Remote API, disk swap without a restart,
+  screenshots and automatic title pictures, saved games, copying, network search (also via UDP broadcast), optional
+  password. / BMX (Bare Metal X auf Raspberry Pi 4/5) als vierte Geräteart (**ungetestete Vorschau**, nach dem Quelltext von BMX
+  ohne echtes Gerät gebaut): alle Formate einschließlich TAP über die Remote API hochladen und starten, Diskwechsel ohne
+  Neustart, Bildschirmfotos und automatisches Titelbild, Spielstände, Kopieren, Suche im Netz (auch per UDP-Broadcast),
+  Passwort möglich.
+
 ## 0.9.4 (2026-11-23)
 
 - After a scan, a message lists which files are new and which are missing since the last scan (up to 500 each per

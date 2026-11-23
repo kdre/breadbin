@@ -1,6 +1,7 @@
 //! Spiele auf einem Gerät starten: Ultimate (Ultimate 64, C64 Ultimate, 1541 Ultimate II+) oder
 //! BMC64 auf dem Raspberry Pi (Upload und Autostart über dessen Weboberfläche, siehe `bmc64.rs`)
-//! oder TeensyROM (Fernsteuer-Protokoll über TCP 2112, siehe `teensyrom.rs`, ungetestet).
+//! oder TeensyROM (Fernsteuer-Protokoll über TCP 2112, siehe `teensyrom.rs`, ungetestet)
+//! oder BMX auf dem Raspberry Pi 4/5 (Remote API, siehe `bmx.rs`, ungetestet).
 //!
 //! Ultimate:
 //! - PRG: `runners:run_prg`, CRT: `runners:run_crt` – jeweils mit Datei auf dem Gerät.
@@ -22,6 +23,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::bmc64::{self, Bmc64};
+use crate::bmx::{self, Bmx};
 use crate::db;
 use crate::ftp::{self, Ftp};
 use crate::remote::{self, Remote};
@@ -43,7 +45,7 @@ pub struct Device {
     /// WLAN-MAC zum Einschalten per Wake-on-WiFi, leer wenn unbekannt.
     #[serde(default)]
     pub wifi_mac: String,
-    /// Geräteart: `ultimate`, `bmc64` oder `teensyrom`.
+    /// Geräteart: `ultimate`, `bmc64`, `teensyrom` oder `bmx`.
     #[serde(default = "default_kind")]
     pub kind: String,
 }
@@ -59,6 +61,21 @@ impl Device {
 
     pub fn is_teensyrom(&self) -> bool {
         self.kind == remote::TEENSYROM
+    }
+
+    pub fn is_bmx(&self) -> bool {
+        self.kind == remote::BMX
+    }
+
+    /// Ordner, in die Breadbin zum Starten Dateien legt: der Startordner, bei BMX dazu die
+    /// Geschwister unter `carts/` und `tapes/`.
+    pub fn launch_dirs(&self) -> Vec<String> {
+        let dir = format!("/{}", self.upload_dir.trim().trim_matches('/'));
+        if self.is_bmx() {
+            bmx::launch_dirs(&dir)
+        } else {
+            vec![dir]
+        }
     }
 }
 
@@ -155,7 +172,7 @@ pub struct DeviceInfo {
     pub wifi_mac: String,
     /// Laufwerke laut FTP (z. B. `USB0`, `SD`), für den Vorschlag des Startordners.
     pub drives: Vec<String>,
-    /// Geräteart: `ultimate` oder `bmc64`.
+    /// Geräteart: `ultimate`, `bmc64`, `teensyrom` oder `bmx`.
     pub kind: String,
 }
 
@@ -417,7 +434,7 @@ pub fn device_hints(product: &str, firmware: &str, kernal: &str) -> Vec<String> 
     out
 }
 
-/// Fragt ein Gerät ab: erst, ob es ein TeensyROM (TCP 2112) oder BMC64 ist; sonst beim Ultimate REST
+/// Fragt ein Gerät ab: erst, ob es ein TeensyROM (TCP 2112), BMX oder BMC64 ist; sonst beim Ultimate REST
 /// für Typ und Firmware, FTP für die Laufwerke.
 pub fn probe(host: &str, password: &str) -> Result<DeviceInfo> {
     // Zuerst TeensyROM: der hat keinen Webserver, die BMC64-Abfrage scheiterte sonst an ihm.
@@ -429,6 +446,16 @@ pub fn probe(host: &str, password: &str) -> Result<DeviceInfo> {
             wifi_mac: String::new(),
             drives: TeensyRom::new(host).volumes().unwrap_or_default(),
             kind: remote::TEENSYROM.into(),
+        });
+    }
+    if let Some(st) = bmx::detect(host, password)? {
+        return Ok(DeviceInfo {
+            product: st.product(),
+            firmware: st.version.clone(),
+            hostname: "bmx".into(),
+            wifi_mac: String::new(),
+            drives: Bmx::new(host, password).volumes()?,
+            kind: remote::BMX.into(),
         });
     }
     if let Some(st) = bmc64::detect(host, password)? {
@@ -620,19 +647,35 @@ pub fn is_breadbin_file(name: &str) -> bool {
 /// die sich seitdem geändert haben (Spielstände). Andere Dateien bleiben liegen.
 /// Gibt (gelöscht, übrig gelassen) zurück.
 pub fn clean_upload_dir(dev: &Device, password: &str) -> Result<(usize, usize)> {
-    let dir = format!("/{}", dev.upload_dir.trim().trim_matches('/'));
     let mut f = connect(dev, password)?;
-    if !f.is_dir(&dir)? {
-        f.quit();
+    let mut total = (0, 0);
+    for dir in dev.launch_dirs() {
+        match clean_dir(&mut f, &dir) {
+            Ok((d, k)) => {
+                total.0 += d;
+                total.1 += k;
+            }
+            Err(e) => {
+                f.quit();
+                return Err(e);
+            }
+        }
+    }
+    f.quit();
+    Ok(total)
+}
+
+fn clean_dir(f: &mut Remote, dir: &str) -> Result<(usize, usize)> {
+    if !f.is_dir(dir)? {
         return Ok((0, 0));
     }
     // Geänderte Disketten (Spielstände) bleiben liegen, bis sie zurückgeholt sind.
-    let changed: Vec<String> = changed_disks_in(&mut f, &dir)?
+    let changed: Vec<String> = changed_disks_in(f, dir)?
         .into_iter()
         .map(|c| c.name)
         .collect();
     let files: Vec<String> = f
-        .list(&dir)?
+        .list(dir)?
         .into_iter()
         .filter(|e| !e.is_dir)
         .map(|e| e.name)
@@ -643,11 +686,10 @@ pub fn clean_upload_dir(dev: &Device, password: &str) -> Result<(usize, usize)> 
     for name in &ours {
         f.delete(&format!("{dir}/{name}"))?;
     }
-    f.quit();
     Ok((ours.len(), others.len()))
 }
 
-/// Verbindung zum Gerät (FTP beim Ultimate, HTTP bei BMC64).
+/// Verbindung zum Gerät (FTP beim Ultimate, HTTP bei BMC64 und BMX, TCP beim TeensyROM).
 pub fn connect(dev: &Device, password: &str) -> Result<Remote> {
     Remote::connect(&dev.kind, &dev.host, password)
 }
@@ -945,6 +987,9 @@ pub fn launch(
     }
     if dev.is_teensyrom() {
         return launch_teensyrom(&d, sha1, dev, password_for, insert_only);
+    }
+    if dev.is_bmx() {
+        return launch_bmx(&d, sha1, dev, device_password, password_for, insert_only);
     }
     let format = d.row.format.as_str();
     let (run_ext, disk_type) = match format {
@@ -1325,6 +1370,105 @@ fn launch_bmc64(
     })
 }
 
+/// Start auf BMX (ungetestet): Datei hochladen (Disketten, PRG, T64 nach `…/disks/…`, Module nach
+/// `…/carts/…`, Bänder nach `…/tapes/…`) und per Autostart starten. VICE startet PRG, P00, T64, TAP,
+/// CRT und alle Disk-Abbilder selbst. `insert_only` legt ein Disk-Abbild in Laufwerk 8 ein, ohne
+/// Neustart. Vor dem Start von etwas anderem als einem Modul zieht Breadbin ein steckendes Modul ab.
+fn launch_bmx(
+    d: &db::Details,
+    sha1: &str,
+    dev: &Device,
+    password: &str,
+    password_for: &dyn Fn(&str) -> String,
+    insert_only: bool,
+) -> Result<LaunchResult> {
+    let format = d.row.format.as_str();
+    let ext = match format {
+        "PRG" | "P00" | "T64" | "TAP" | "CRT" | "D64" | "D71" | "D81" | "G64" => {
+            format.to_ascii_lowercase()
+        }
+        other => bail!(tr!(
+            "Format {other} lässt sich nicht starten.",
+            "Format {other} cannot be launched."
+        )),
+    };
+    let is_disk = matches!(format, "D64" | "D71" | "D81" | "G64");
+    if insert_only && !is_disk {
+        bail!(tr!(
+            "Nur Disk-Abbilder lassen sich einlegen.",
+            "Only disk images can be inserted."
+        ));
+    }
+    let client = Bmx::new(&dev.host, password);
+
+    // Liegt die Datei schon unverändert auf diesem Gerät?
+    let on_device = d.locations.iter().find_map(|l| {
+        let (host, root) = ftp::split_location(&l.source_location)?;
+        (l.source_kind == "ultimate"
+            && remote::location_kind(&l.source_location) == remote::BMX
+            && host.eq_ignore_ascii_case(dev.host.trim())
+            && l.member.is_empty())
+        .then(|| format!("{}/{}", root.trim_end_matches('/'), l.path))
+    });
+    let (device_path, copied) = match on_device {
+        Some(p) => (p, false),
+        None => {
+            let loc = d
+                .locations
+                .iter()
+                .find(|l| l.source_kind == "local")
+                .or_else(|| d.locations.first())
+                .context(tr!(
+                    "Für diesen Eintrag ist kein Speicherort bekannt",
+                    "No storage location is known for this entry"
+                ))?;
+            let data = read_location(loc, password_for)?;
+            let dir = bmx::dir_for(&dev.upload_dir, format);
+            let mut r = Remote::Bmx(Bmx::new(&dev.host, password));
+            make_dirs(&mut r, &dir).map_err(|e| {
+                e.context(tr!(
+                    "Startordner in den Geräte-Einstellungen prüfen",
+                    "Check the launch folder in the device settings"
+                ))
+            })?;
+            let path = format!("{dir}/{}", device_file_name(&d.row.title, sha1, &ext));
+            // Gleicher Name = gleicher Inhalt (Prüfsumme im Namen); eine eingelegte Diskette ließe
+            // sich ohnehin nicht überschreiben.
+            let copied = client.upload_if_missing(&path, &data)?;
+            (path, copied)
+        }
+    };
+    if insert_only {
+        client.attach_disk(&device_path)?;
+        return Ok(LaunchResult {
+            message: tr!(
+                "Diskette in Laufwerk 8 eingelegt (ohne Neustart): {device_path}",
+                "Disk inserted into drive 8 (no restart): {device_path}"
+            ),
+            device_path,
+            copied,
+        });
+    }
+    if format != "CRT" {
+        // Ein steckendes Modul würde sonst statt des Spiels starten; ohne Modul ist das egal.
+        let _ = client.detach_cartridge();
+    }
+    client.autostart(&device_path)?;
+    let message = if format == "CRT" {
+        tr!(
+            "Modul eingelegt und gestartet: {device_path}",
+            "Cartridge inserted and started: {device_path}"
+        )
+    } else {
+        tr!("Gestartet: {device_path}", "Started: {device_path}")
+    };
+    Ok(LaunchResult {
+        message,
+        device_path,
+        copied,
+    })
+}
+
 /// Start auf dem TeensyROM (ungetestet): Datei in den Startordner hochladen und starten.
 ///
 /// Der TeensyROM lädt nur einzelne Dateien (PRG/P00, CRT). T64 wird zum PRG (erstes Programm), ein
@@ -1674,6 +1818,117 @@ mod tests {
         let (deleted, kept) = clean_upload_dir(&dev, "").unwrap();
         assert_eq!((deleted, kept), (2, 0));
         assert!(m.state.lock().unwrap().files.is_empty());
+    }
+
+    #[test]
+    fn auf_bmx_starten() {
+        use crate::bmx::mock;
+        let dir = tempfile::tempdir().unwrap();
+        let w = |name: &str, data: &[u8]| std::fs::write(dir.path().join(name), data).unwrap();
+        w("Hopper.prg", &[0x01, 0x08, 0x60]);
+        w("Disk.d64", &testdata::d64(b"D", &[(b"GAME", 0x82, 1)]));
+        w("Modul.crt", b"C64 CARTRIDGE   \0\0\0\x40");
+        w(
+            "Band.tap",
+            b"C64-TAPE-RAW\x01\0\0\0\x04\0\0\0\x30\x30\x30\x30",
+        );
+        let conn = db::open_in_memory().unwrap();
+        let id = db::add_local_source(&conn, dir.path()).unwrap();
+        crate::scan::scan_local(
+            &conn,
+            id,
+            &std::sync::atomic::AtomicBool::new(false),
+            &mut |_| {},
+        )
+        .unwrap();
+        let sha = |name: &str| -> String {
+            conn.query_row("SELECT sha1 FROM files WHERE path = ?", [name], |r| {
+                r.get(0)
+            })
+            .unwrap()
+        };
+        let m = mock::start();
+        m.state.lock().unwrap().password = "pw".into();
+        let dev = Device {
+            id: 1,
+            name: "BMX".into(),
+            host: m.addr.clone(),
+            product: "BMX".into(),
+            upload_dir: "/USER/disks/Breadbin".into(),
+            wifi_mac: String::new(),
+            kind: remote::BMX.into(),
+        };
+        let none = |_: &str| String::new();
+        let r = launch(&conn, &sha("Hopper.prg"), &dev, "pw", &none, false).unwrap();
+        assert!(r.copied);
+        assert!(
+            r.device_path.starts_with("/USER/disks/Breadbin/Hopper_"),
+            "{}",
+            r.device_path
+        );
+        {
+            let g = m.state.lock().unwrap();
+            let a: Vec<&str> = g.actions.iter().map(|(a, _)| a.as_str()).collect();
+            assert_eq!(a, ["media.cartridge.detach", "media.autostart"]);
+            assert!(g.actions[1].1.starts_with("USER:/disks/Breadbin/Hopper_"));
+        }
+        // Zweiter Start: liegt schon dort – nicht noch einmal hochladen.
+        let r = launch(&conn, &sha("Hopper.prg"), &dev, "pw", &none, false).unwrap();
+        assert!(!r.copied);
+        assert_eq!(m.state.lock().unwrap().uploads, 1);
+
+        let r = launch(&conn, &sha("Modul.crt"), &dev, "pw", &none, false).unwrap();
+        assert!(
+            r.device_path.starts_with("/USER/carts/Breadbin/Modul_"),
+            "{}",
+            r.device_path
+        );
+        let r = launch(&conn, &sha("Band.tap"), &dev, "pw", &none, false).unwrap();
+        assert!(
+            r.device_path.starts_with("/USER/tapes/Breadbin/Band_"),
+            "{}",
+            r.device_path
+        );
+        assert_eq!(
+            m.state.lock().unwrap().cart,
+            "",
+            "Modul vor dem Bandstart abgezogen"
+        );
+
+        // Einlegen ohne Neustart, auch wenn die Diskette schon eingelegt ist.
+        let r = launch(&conn, &sha("Disk.d64"), &dev, "pw", &none, true).unwrap();
+        assert!(r.message.contains("Laufwerk 8"), "{}", r.message);
+        let r2 = launch(&conn, &sha("Disk.d64"), &dev, "pw", &none, true).unwrap();
+        assert!(!r2.copied);
+        assert_eq!(
+            m.state.lock().unwrap().actions.last().unwrap().0,
+            "media.drive.8.attach"
+        );
+        let e = launch(&conn, &sha("Hopper.prg"), &dev, "pw", &none, true).unwrap_err();
+        assert!(e.to_string().contains("Disk-Abbilder"), "{e}");
+
+        // Spielstand: die eingelegte Diskette ändert sich auf dem Gerät.
+        {
+            let mut g = m.state.lock().unwrap();
+            let key = g
+                .files
+                .keys()
+                .find(|k| k.ends_with(".d64"))
+                .unwrap()
+                .clone();
+            g.files.get_mut(&key).unwrap()[0] ^= 0xFF;
+            g.drive8.clear();
+        }
+        let changed = changed_disks(&dev, "pw").unwrap();
+        assert_eq!(changed.len(), 1);
+        // Leeren: in disks/, carts/ und tapes/; der Spielstand bleibt.
+        let (deleted, kept) = clean_upload_dir(&dev, "pw").unwrap();
+        assert_eq!(
+            (deleted, kept),
+            (3, 1),
+            "Spielstand zählt als übrig gelassen"
+        );
+        assert_eq!(m.state.lock().unwrap().files.len(), 1);
     }
 
     #[test]

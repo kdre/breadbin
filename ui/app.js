@@ -1938,7 +1938,7 @@ async function loadDevices() {
         </div>
       </details>
     </li>`).join("")
-    : `<li class="empty">${t("Noch kein Gerät. Mit „+ Gerät“ einen Ultimate, BMC64 oder TeensyROM im Netzwerk hinzufügen, um Spiele dort zu starten.")}</li>`;
+    : `<li class="empty">${t("Noch kein Gerät. Mit „+ Gerät“ einen Ultimate, BMC64, BMX oder TeensyROM im Netzwerk hinzufügen, um Spiele dort zu starten.")}</li>`;
   devices.forEach((d) => refreshDeviceStatus(d.id));
 }
 
@@ -2043,14 +2043,17 @@ $("#dev-probe").addEventListener("click", async () => {
     fillDrives("#dev-drives", info.drives);
     if (!$("#dev-upload").value) {
       // TeensyROM: SD zuerst – große Module (über 850 KB) startet er nur von dort.
+      // BMX: nur Ordner unter disks/, tapes/, carts/ eines Laufwerks; USER zuerst.
       const usb = isTr(info) ? (info.drives.find((d) => d === "SD") ?? info.drives[0] ?? "SD")
+        : isBmx(info) ? (info.drives.find((d) => d === "USER") ?? info.drives.find((d) => d === "SD") ?? info.drives[0] ?? "USER")
         : info.drives.find((d) => d.toUpperCase().startsWith("USB")) ?? info.drives.find((d) => d === "SD") ?? "USB0";
-      $("#dev-upload").value = `/${usb}/Breadbin`;
+      $("#dev-upload").value = isBmx(info) ? `/${usb}/disks/Breadbin` : `/${usb}/Breadbin`;
     }
     setDevResult(t("Gefunden: {product}{fw}. Laufwerke: {drives}.", {
       product: info.product, fw: info.firmware ? t(", Firmware {fw}", { fw: info.firmware }) : "",
       drives: info.drives.join(", ") || t("keine"),
-    }) + (isTr(info) ? " " + t("TeensyROM-Unterstützung ist ungetestet.") : ""), "ok");
+    }) + (isTr(info) ? " " + t("TeensyROM-Unterstützung ist ungetestet.")
+      : isBmx(info) ? " " + t("BMX-Unterstützung ist ungetestet.") : ""), "ok");
   } catch (e) {
     setDevResult(String(e), "bad");
   }
@@ -2060,8 +2063,8 @@ $("#dev-save").addEventListener("click", async () => {
     editingDevice.kind = $("#dev-kind").value || "ultimate";
     const sd = isBmc(editingDevice) || isTr(editingDevice);
     const device = { ...editingDevice, host: $("#dev-host").value.trim(), name: $("#dev-name").value.trim(),
-      upload_dir: $("#dev-upload").value.trim() || (sd ? "/SD/Breadbin" : "/USB0/Breadbin"),
-      product: editingDevice.product || (isBmc(editingDevice) ? "BMC64" : isTr(editingDevice) ? "TeensyROM" : "Ultimate") };
+      upload_dir: $("#dev-upload").value.trim() || (isBmx(editingDevice) ? "/USER/disks/Breadbin" : sd ? "/SD/Breadbin" : "/USB0/Breadbin"),
+      product: editingDevice.product || (isBmc(editingDevice) ? "BMC64" : isBmx(editingDevice) ? "BMX" : isTr(editingDevice) ? "TeensyROM" : "Ultimate") };
     await invoke("save_device", { device, password: $("#dev-password").value || null });
     $("#device-dialog").close();
     await loadDevices();
@@ -2196,10 +2199,11 @@ function disksHtml(variants) {
       </li>`).join("")}</ol>`).join("")}`;
 }
 
-// Bildschirmfotos über den Videostrom können Ultimate 64 und C64 Ultimate, nicht das 1541 Ultimate II+,
-// BMC64 und TeensyROM.
+// Bildschirmfotos können Ultimate 64 und C64 Ultimate (Videostrom) und BMX (Remote API), nicht das
+// 1541 Ultimate II+, BMC64 und TeensyROM.
 const isBmc = (d) => d?.kind === "bmc64";
 const isTr = (d) => d?.kind === "teensyrom";
+const isBmx = (d) => d?.kind === "bmx";
 // Steck-Ultimates melden „Ultimate II“, „Ultimate II+“, „Ultimate II+L“; die Ultimate 64 „Ultimate 64(-II)“.
 const isCartUltimate = (d) => { const p = (d?.product || "").replace(/-/g, " "); return /1541/i.test(p) || (/ultimate ii/i.test(p) && !/64/.test(p)); };
 const canShoot = (d) => !!d && !isBmc(d) && !isTr(d) && !isCartUltimate(d);
@@ -2224,8 +2228,9 @@ function storedTarget() {
 }
 
 // Knöpfe, die nur mit einem Gerät gehen, beim Wechsel auf den Emulator ausblenden (und umgekehrt).
-// BMC64 kann nicht einlegen (nur mit Neustart) und keine Bildschirmfotos; TAP startet nur BMC64.
+// BMC64 kann nicht einlegen (nur mit Neustart) und keine Bildschirmfotos; TAP starten BMC64 und BMX.
 // TeensyROM lädt nur einzelne Dateien: kein Einlegen, keine Spielstände, kein Bildschirmfoto.
+// BMX (ungetestet) kann einlegen, Bildschirmfotos und TAP.
 function syncLaunchTarget(pane) {
   const value = pane.querySelector("#launch-device")?.value;
   const emu = isEmuTarget(value);
@@ -2236,7 +2241,8 @@ function syncLaunchTarget(pane) {
   pane.querySelectorAll("#btn-saves").forEach((el) => { el.hidden = emu || isTr(dev); });
   const shot = pane.querySelector("#btn-shot");
   if (shot) shot.hidden = emu || !canShoot(dev);
-  pane.querySelectorAll(".ult-only").forEach((el) => { el.hidden = emu || isBmc(dev) || isTr(dev); });
+  pane.querySelectorAll(".ult-only").forEach((el) => { el.hidden = emu || isBmc(dev) || isTr(dev) || isBmx(dev); });
+  pane.querySelectorAll(".bmx-only").forEach((el) => { el.hidden = emu || !isBmx(dev); });
   pane.querySelectorAll(".tr-only").forEach((el) => { el.hidden = emu || !isTr(dev); });
   pane.querySelectorAll(".bmc-only").forEach((el) => { el.hidden = emu || !isBmc(dev); });
 }
@@ -2254,14 +2260,16 @@ function launchHtml(r) {
     <select id="launch-device">${devices.map((d) =>
       `<option value="${d.id}" ${d.id === sel ? "selected" : ""}>${esc(d.name)}</option>`).join("")}${emulators().map((e, i) =>
       `<option value="emu:${i}" ${sel === `emu:${i}` ? "selected" : ""}>${esc(emuLabel(e, i))}</option>`).join("")}</select>
-    ${tap && !emu && !devices.some(isBmc) ? "" : `<button class="primary" id="btn-launch">${t("Starten")}</button>`}
+    ${tap && !emu && !devices.some((d) => isBmc(d) || isBmx(d)) ? "" : `<button class="primary" id="btn-launch">${t("Starten")}</button>`}
     ${disk ? `<button class="dev-only" id="btn-insert" title="${t("In Laufwerk A einlegen, ohne Neustart – für den Diskwechsel im laufenden Spiel")}">${t("Einlegen")}</button>` : ""}
     ${disk ? `<button class="dev-only" id="btn-saves" title="${t("Hat das Spiel auf seine Diskette im Startordner gespeichert, diese Diskette mit Spielstand auf den Rechner holen")}">${t("Spielstand holen …")}</button>` : ""}
     ${shot}
-    <span class="meta hint ult-only">${tap ? t("Bandabbilder (TAP) startet nur BMC64; auf dem Ultimate geht das noch nicht.")
+    <span class="meta hint ult-only">${tap ? t("Bandabbilder (TAP) starten nur BMC64 und BMX; auf dem Ultimate geht das noch nicht.")
       : disk ? t("Starten beendet, was gerade auf dem C64 läuft, und startet dieses Spiel; Einlegen wechselt nur die Diskette in Laufwerk A.")
       : t("Starten beendet, was gerade auf dem C64 läuft, und startet dieses Spiel.")}</span>
     <span class="meta hint bmc-only">${t("Starten beendet, was gerade in BMC64 läuft, und startet dieses Spiel (Autostart). Diskwechsel nur im BMC64-Menü.")}</span>
+    <span class="meta hint bmx-only">${disk ? t("Starten beendet, was gerade in BMX läuft, und startet dieses Spiel (Autostart); Einlegen wechselt nur die Diskette in Laufwerk 8. BMX-Unterstützung ist ungetestet.")
+      : t("Starten beendet, was gerade in BMX läuft, und startet dieses Spiel (Autostart). BMX-Unterstützung ist ungetestet.")}</span>
     <span class="meta hint tr-only">${tap || r.format === "G64" ? t("TeensyROM kann {format} nicht starten.", { format: r.format })
       : disk ? t("TeensyROM (ungetestet) startet nur Disketten mit einer einzigen Programmdatei; mehrteilige Disk-Spiele gehen nicht.")
       : t("Starten setzt den C64 zurück und startet dieses Spiel über den TeensyROM (ungetestet).")}</span>
@@ -2275,13 +2283,13 @@ async function captureScreen(pane, r, btn) {
   const deviceId = Number(pane.querySelector("#launch-device").value);
   const dev = devices.find((d) => d.id === deviceId);
   if (!canShoot(dev)) {
-    showError(t("{name} liefert kein Bild – Bildschirmfotos gehen mit Ultimate 64 und C64 Ultimate.", { name: dev?.name ?? "?" }));
+    showError(t("{name} liefert kein Bild – Bildschirmfotos gehen mit Ultimate 64, C64 Ultimate und BMX.", { name: dev?.name ?? "?" }));
     return;
   }
   const title = t("Titelbild"), scene = t("Spielszene");
   const answer = await invoke("plugin:dialog|message", {
     message: t("Was gerade auf {name} zu sehen ist, als eigenes Bild speichern – als was?", { name: dev.name })
-      + "\n\n" + t("Der Ultimate schickt sein Bild dafür kurz als Videostrom – nur über Ethernet, das Gerät muss per Netzwerkkabel verbunden sein. Andere Empfänger (etwa eine Jukebox) verlieren den Strom dabei."),
+      + (isBmx(dev) ? "" : "\n\n" + t("Der Ultimate schickt sein Bild dafür kurz als Videostrom – nur über Ethernet, das Gerät muss per Netzwerkkabel verbunden sein. Andere Empfänger (etwa eine Jukebox) verlieren den Strom dabei.")),
     title: t("Bildschirmfoto"), kind: "info",
     buttons: { YesNoCancelCustom: [title, scene, t("Abbrechen")] },
   });

@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS devices(
     product    TEXT NOT NULL,
     upload_dir TEXT NOT NULL,        -- Ordner für Dateien, die zum Starten hinkopiert werden
     wifi_mac   TEXT NOT NULL DEFAULT '', -- zum Einschalten per Wake-on-WiFi
-    kind       TEXT NOT NULL DEFAULT 'ultimate' -- Geräteart: ultimate | bmc64
+    kind       TEXT NOT NULL DEFAULT 'ultimate' -- Geräteart: ultimate | bmc64 | teensyrom | bmx
 );
 ";
 

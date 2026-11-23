@@ -41,7 +41,7 @@ const EN = {
   "+ Ordner": "+ Folder",
   "Alle scannen": "Scan all",
   "Ultimate-Geräte": "Ultimate devices",
-  "Ultimate 64, C64 Ultimate, 1541 Ultimate II+, BMC64 oder TeensyROM hinzufügen": "Add an Ultimate 64, C64 Ultimate, 1541 Ultimate II+, BMC64 or TeensyROM",
+  "Ultimate 64, C64 Ultimate, 1541 Ultimate II+, BMC64, BMX oder TeensyROM hinzufügen": "Add an Ultimate 64, C64 Ultimate, 1541 Ultimate II+, BMC64, BMX or TeensyROM",
   "Geräte": "Devices",
   "+ Gerät": "+ Device",
   "Beschreibungen": "Descriptions",
@@ -141,7 +141,15 @@ const EN = {
     "Ultimate 64, C64 Ultimate or 1541 Ultimate II+ on the network. FTP and the REST interface (“Web Remote Control Service”, firmware 3.11 or later) are required.",
   "Im Netz suchen": "Search network",
   "Adresse (IP oder Name)": "Address (IP or name)",
-  "Netzwerk-Passwort bzw. BMC64-PIN (nur falls gesetzt)": "Network password or BMC64 PIN (only if set)",
+  "Netzwerk-Passwort, BMC64-PIN bzw. BMX-Passwort (nur falls gesetzt)": "Network password, BMC64 PIN or BMX password (only if set)",
+  "Oder BMX auf einem Raspberry Pi 4/5 (ungetestet): im BMX-Menü „Remote API“ einschalten.":
+    "Or BMX on a Raspberry Pi 4/5 (untested): turn on “Remote API” in the BMX menu.",
+  "BMX (ungetestet)": "BMX (untested)",
+  "BMX-Unterstützung ist ungetestet.": "BMX support is untested.",
+  "Starten beendet, was gerade in BMX läuft, und startet dieses Spiel (Autostart); Einlegen wechselt nur die Diskette in Laufwerk 8. BMX-Unterstützung ist ungetestet.":
+    "Launching ends whatever is running in BMX and starts this game (autostart); Insert only swaps the disk in drive 8. BMX support is untested.",
+  "Starten beendet, was gerade in BMX läuft, und startet dieses Spiel (Autostart). BMX-Unterstützung ist ungetestet.":
+    "Launching ends whatever is running in BMX and starts this game (autostart). BMX support is untested.",
   "Oder BMC64 auf einem Raspberry Pi: im BMC64-Menü Netzwerk und „Web UI“ einschalten (ab BMC64 5.5.1).":
     "Or BMC64 on a Raspberry Pi: turn on networking and “Web UI” in the BMC64 menu (BMC64 5.5.1 or later).",
   "Oder TeensyROM (ungetestet): am Gerät „Enable TCP Listener“ einschalten; Adresse von Hand eintragen.":
@@ -288,7 +296,7 @@ const EN = {
   "Als Titelbild": "Use as title screen",
   "Liegt dort schon ein Bild, tauschen beide den Platz.": "If there is already a picture there, the two swap places.",
   "Bild vom Bildschirm des Geräts als eigenes Titelbild oder eigene Spielszene speichern – nur mit Netzwerkkabel am Gerät": "Save what the device shows as your own title screen or in-game picture – only with a network cable on the device",
-  "{name} liefert kein Bild – Bildschirmfotos gehen mit Ultimate 64 und C64 Ultimate.": "{name} provides no picture – screenshots work with Ultimate 64 and C64 Ultimate.",
+  "{name} liefert kein Bild – Bildschirmfotos gehen mit Ultimate 64, C64 Ultimate und BMX.": "{name} provides no picture – screenshots work with Ultimate 64, C64 Ultimate and BMX.",
   "Was gerade auf {name} zu sehen ist, als eigenes Bild speichern – als was?": "Save what {name} is showing as your own picture – as what?",
   "Der Ultimate schickt sein Bild dafür kurz als Videostrom – nur über Ethernet, das Gerät muss per Netzwerkkabel verbunden sein. Andere Empfänger (etwa eine Jukebox) verlieren den Strom dabei.": "The Ultimate briefly sends its picture as a video stream – over Ethernet only, so the device needs a network cable. Other receivers (such as a jukebox) lose the stream meanwhile.",
   "Nehme das Bild von {name} auf …": "Capturing the picture from {name} …",
@@ -415,8 +423,8 @@ const EN = {
   "Bearbeiten": "Edit",
   "Dateien löschen, die Breadbin zum Starten in den Startordner kopiert hat": "Delete the files Breadbin copied to the launch folder to start games",
   "Startordner leeren": "Empty launch folder",
-  "Noch kein Gerät. Mit „+ Gerät“ einen Ultimate, BMC64 oder TeensyROM im Netzwerk hinzufügen, um Spiele dort zu starten.":
-    "No device yet. Use “+ Device” to add an Ultimate, BMC64 or TeensyROM on your network and launch games on it.",
+  "Noch kein Gerät. Mit „+ Gerät“ einen Ultimate, BMC64, BMX oder TeensyROM im Netzwerk hinzufügen, um Spiele dort zu starten.":
+    "No device yet. Use “+ Device” to add an Ultimate, BMC64, BMX or TeensyROM on your network and launch games on it.",
   "an": "on",
   "aus": "off",
   "unbekannt": "unknown",
@@ -458,7 +466,7 @@ const EN = {
   "z. B. -ntsc -reu": "e.g. -ntsc -reu",
   "Emulator-Optionen für dieses Spiel gespeichert.": "Emulator options for this game saved.",
   "Emulator-Optionen für dieses Spiel entfernt.": "Emulator options for this game removed.",
-  "Bandabbilder (TAP) startet nur BMC64; auf dem Ultimate geht das noch nicht.": "Only BMC64 launches tape images (TAP); the Ultimate cannot do this yet.",
+  "Bandabbilder (TAP) starten nur BMC64 und BMX; auf dem Ultimate geht das noch nicht.": "Only BMC64 and BMX launch tape images (TAP); the Ultimate cannot do this yet.",
   "Starten beendet, was gerade in BMC64 läuft, und startet dieses Spiel (Autostart). Diskwechsel nur im BMC64-Menü.":
     "Launching ends whatever is running in BMC64 and starts this game (autostart). Disk swaps only in the BMC64 menu.",
   "Starten": "Launch",

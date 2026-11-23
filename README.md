@@ -54,6 +54,13 @@ has a built-in manual (“?” button or F1).
   T64 and TAP; scan folders on the Pi's SD card or USB stick, copy games, fetch saved games, optional PIN
 - Not possible with BMC64: disk swap without a restart, screenshots, switching on/off
 
+**BMX (Raspberry Pi 4/5, untested preview)**
+- Upload and start games via the BMX Remote API (turn on “Remote API” in the BMX menu, optional password): PRG, P00,
+  T64, TAP, CRT and all disk images by autostart; disk swap without a restart, screenshots and automatic title
+  pictures, saved games, copy games, network search
+- Built from the BMX source code without a real device – feedback from owners welcome. Launch folders must be under
+  `disks/`, `tapes/` or `carts/` of a drive (e.g. `/USER/disks/Breadbin`). Not possible: switching on/off
+
 **TeensyROM (untested)**
 - Upload and start games over the TeensyROM's TCP remote protocol (port 2112, “Enable TCP Listener”): PRG, P00,
   T64, CRT and disks with a single program file; scan folders on its SD card or USB stick, copy games
@@ -92,7 +99,7 @@ Breadbin is not signed with a paid certificate, so the systems warn on the first
 - macOS, Windows and Linux (AppImage on Fedora)
 - BMC64 5.5.2 on a Raspberry Pi 3B+ (Ethernet): network search, scanning a folder on the Pi, uploading and starting
   PRG, D64, CRT and TAP, saved games, copying
-- Not tested yet: 1541 Ultimate II+ and TeensyROM (built from the protocol documentation only). Tape images (TAP) cannot be started on the Ultimate (BMC64 and the emulator can).
+- Not tested yet: 1541 Ultimate II+, TeensyROM (built from the protocol documentation only) and BMX (built from its source code only). Tape images (TAP) cannot be started on the Ultimate (BMC64, BMX and the emulator can).
 
 ## License
 

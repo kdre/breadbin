@@ -55,6 +55,13 @@ eine Anleitung ist eingebaut (Knopf „?“ oder F1).
   T64 und TAP; Ordner auf SD-Karte oder USB-Stick des Pi scannen, Spiele kopieren, Spielstände holen, PIN möglich
 - Mit BMC64 nicht möglich: Diskwechsel ohne Neustart, Bildschirmfotos, Ein-/Ausschalten
 
+**BMX (Raspberry Pi 4/5, ungetestete Vorschau)**
+- Spiele über die Remote API von BMX hochladen und starten (im BMX-Menü „Remote API“ einschalten, Passwort möglich):
+  PRG, P00, T64, TAP, CRT und alle Disk-Abbilder per Autostart; Diskwechsel ohne Neustart, Bildschirmfotos und
+  automatisches Titelbild, Spielstände, Spiele kopieren, Suche im Netz
+- Nach dem Quelltext von BMX ohne echtes Gerät gebaut – Rückmeldungen von Besitzern willkommen. Startordner müssen unter
+  `disks/`, `tapes/` oder `carts/` eines Laufwerks liegen (z. B. `/USER/disks/Breadbin`). Nicht möglich: Ein-/Ausschalten
+
 **TeensyROM (ungetestet)**
 - Spiele über das TCP-Fernsteuerprotokoll des TeensyROM hochladen und starten (Port 2112, „Enable TCP Listener“):
   PRG, P00, T64, CRT und Disketten mit einer Programmdatei; Ordner auf SD-Karte oder USB-Stick scannen, Spiele kopieren
@@ -95,7 +102,7 @@ ersten Start:
 - macOS, Windows und Linux (AppImage unter Fedora)
 - BMC64 5.5.2 auf einem Raspberry Pi 3B+ (Ethernet): Netzsuche, Scan eines Ordners auf dem Pi, Hochladen und Starten
   von PRG, D64, CRT und TAP, Spielstände, Kopieren
-- Noch nicht getestet: 1541 Ultimate II+ und TeensyROM (nur nach der Protokoll-Doku gebaut). Bandabbilder (TAP) lassen sich auf dem Ultimate nicht starten (auf BMC64 und im Emulator schon).
+- Noch nicht getestet: 1541 Ultimate II+, TeensyROM (nur nach der Protokoll-Doku gebaut) und BMX (nur nach dem Quelltext gebaut). Bandabbilder (TAP) lassen sich auf dem Ultimate nicht starten (auf BMC64, BMX und im Emulator schon).
 
 ## Lizenz
 

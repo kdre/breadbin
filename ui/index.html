@@ -39,7 +39,7 @@
     <section class="side" data-key="devices">
       <div class="section-head">
         <button class="fold" aria-expanded="true"><span class="chev">▾</span><h2>Geräte</h2><span class="count" id="devices-count"></span></button>
-        <button id="btn-add-device" class="small icon" title="Ultimate 64, C64 Ultimate, 1541 Ultimate II+, BMC64 oder TeensyROM hinzufügen" aria-label="Gerät hinzufügen">＋</button>
+        <button id="btn-add-device" class="small icon" title="Ultimate 64, C64 Ultimate, 1541 Ultimate II+, BMC64, BMX oder TeensyROM hinzufügen" aria-label="Gerät hinzufügen">＋</button>
       </div>
       <div class="section-body"><ul id="devices" class="rows list"></ul></div>
     </section>
@@ -223,11 +223,12 @@
       <p class="meta">Ultimate 64, C64 Ultimate oder 1541 Ultimate II+ im Netzwerk. Nötig sind FTP und die
         REST-Schnittstelle („Web Remote Control Service“, ab Firmware 3.11).</p>
       <p class="meta">Oder BMC64 auf einem Raspberry Pi: im BMC64-Menü Netzwerk und „Web UI“ einschalten (ab BMC64 5.5.1).</p>
+      <p class="meta">Oder BMX auf einem Raspberry Pi 4/5 (ungetestet): im BMX-Menü „Remote API“ einschalten.</p>
       <p class="meta">Oder TeensyROM (ungetestet): am Gerät „Enable TCP Listener“ einschalten; Adresse von Hand eintragen.</p>
       <div class="dialog-buttons"><button type="button" id="dev-discover">Im Netz suchen</button></div>
       <ul id="dev-found" class="found"></ul>
       <label>Adresse (IP oder Name) <input id="dev-host" placeholder="192.168.1.64" autocomplete="off"></label>
-      <label>Netzwerk-Passwort bzw. BMC64-PIN (nur falls gesetzt)
+      <label>Netzwerk-Passwort, BMC64-PIN bzw. BMX-Passwort (nur falls gesetzt)
         <input id="dev-password" type="password" autocomplete="off"></label>
       <div class="dialog-buttons"><button type="button" id="dev-probe">Verbinden und prüfen</button></div>
       <p id="dev-result" class="meta"></p>
@@ -235,6 +236,7 @@
         <select id="dev-kind">
           <option value="ultimate">Ultimate</option>
           <option value="bmc64">BMC64</option>
+          <option value="bmx">BMX (ungetestet)</option>
           <option value="teensyrom">TeensyROM (ungetestet)</option>
         </select></label>
       <label>Name <input id="dev-name" autocomplete="off"></label>
